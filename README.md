@@ -84,3 +84,26 @@ Contact
 -------
 
 To contact me about anything, you can use the issues system, there is no traffic on it.
+
+
+Woodpatch fork
+==============
+
+This repository is a hard fork of [webgcode](https://github.com/nraynaud/webgcode)
+by Nicolas Raynaud, maintained by Woodpatch as the basis for a G-code
+parser/visualiser and a calibrated machining-time estimator.
+
+**Fork point:** `gh-pages` @ `d315a359` ("add visucam link", 2025-09-18), tagged
+here as `upstream-2025-09-18`. That tag is the frozen reference to diff against
+when pulling upstream changes; `gh-pages` and `master` are kept as upstream left
+them and are not developed on.
+
+Acknowledgements
+----------------
+
+The original work, and everything this fork starts from, is Nicolas Raynaud's.
+Upstream offers it under a choice of MIT **or** AGPL-3.0; this fork is
+distributed under the **MIT** option. Upstream's own licence file is preserved
+unmodified as `LICENSE.txt`, and this fork's licence is in `LICENSE`. See
+`NOTICE` for the full attribution and for the notice requirement that applies to
+built artefacts as well as to source.
