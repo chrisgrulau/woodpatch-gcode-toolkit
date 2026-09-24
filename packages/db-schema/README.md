@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 
 # @woodpatch/gcode-db
 
-TypeScript types, JSON Schema and Zod for machine, tool and material records, shared with PRISM and the website.
+TypeScript types, JSON Schema and Zod for machine, tool and material records, shared by consuming applications.
 
 **Placeholder.** It arrives in Phase 5 (see `docs/PLAN.md`). It stays `"private": true`
 until it has code; at that point it adopts `packages/core`'s build and publishing

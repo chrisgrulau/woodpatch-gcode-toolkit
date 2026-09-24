@@ -94,10 +94,13 @@ third-party libraries in `webapp/libs/`, and about 70 of them carry no licence h
 - **Licensing records** (`REUSE.toml`): upstream's own files are annotated
   `MIT OR AGPL-3.0-only`, © 2016 Nicolas Raynaud. The vendored libraries in
   `legacy/webapp/libs/**` are annotated `LicenseRef-legacy-vendored`
-  (`LICENSES/LicenseRef-legacy-vendored.txt`). That identifier says, honestly, that
-  each file is under its own licence and has not been audited, rather than claiming
-  a licence nobody verified. Nothing may be copied out of `libs/` without first
-  establishing its actual licence.
+  (`LICENSES/LicenseRef-legacy-vendored.txt`). They are redistributed here as
+  received from upstream, each under its own licence. The identifier records that
+  the per-library licences have not yet been listed, rather than claiming one nobody
+  checked. **Before Phase 1 relies on anything in `libs/` beyond `jsparse.js`**, an
+  audit (about 38 libraries) replaces the LicenseRef with real SPDX identifiers per
+  library. Nothing may be copied from `libs/` into the toolkit's packages without
+  first establishing its licence.
 - The one planned consumer is `tools/legacy-harness.cjs`. It loads
   `libs/jsparse.js` (Chris Double, BSD-style licence per its header) at test time
   only.
@@ -124,6 +127,11 @@ owner's own repositories, pinned to full commit SHAs, so `actions/checkout` and
   version means bumping its hash in the same commit.
 - `permissions: contents: read`. Event values reach shell through `env`, never
   through `${{ }}` interpolation into script text.
+- One tool is version-pinned but not hash-pinned: `reuse`, run via
+  `pipx run 'reuse==6.2.0'`. That is accepted because its blast radius is its own
+  job, which has `contents: read`, no secrets and no artefact output. Hash-pin it
+  (`--require-hashes`) if that job ever gains write access or produces output
+  anything else consumes.
 - The jobs (`checks`, `reuse`, `provenance`) are the required status checks on `main`.
   Renaming a job means updating branch protection.
 
@@ -202,6 +210,21 @@ a frozen module namespace, and the legacy harness fails when jsparse tries to se
 **Decision.** The root `package.json` has no `"type"`. Root-level ESM files use
 `.mjs`, and CommonJS tooling uses `.cjs`. Packages under `packages/` declare
 `"type": "module"` themselves.
+
+## ADR-0011: The programme plan is not kept in this repository
+
+**Status:** Accepted, 2026-09-24.
+
+**Context.** The original plan asked for a copy of itself in the repo as
+`docs/PLAN.md`. That plan is an internal document: it describes internal
+infrastructure, business systems and commercial processes. This repository is public.
+
+**Decision.** The plan stays internal and is **not** kept here. This file (the ADR log)
+is the public record of decisions and their reasons, and the README describes status
+and layout. The same rule applies to everything else committed here: package
+descriptions, comments and docs name no internal hosts, systems or customers, and
+refer to consumers only as "consuming applications". Customer G-code never enters
+this repository or its history.
 
 ---
 

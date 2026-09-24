@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 
 # @woodpatch/gcode-svelte
 
-Svelte 5 components wrapping the viewer and editor, shared by the staff portal and the public storefront.
+Svelte 5 components wrapping the viewer and editor, for use in consuming applications.
 
 **Placeholder.** It arrives in Phase 7 (see `docs/PLAN.md`). It stays `"private": true`
 until it has code; at that point it adopts `packages/core`'s build and publishing

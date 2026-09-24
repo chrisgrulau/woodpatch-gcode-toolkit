@@ -2,6 +2,6 @@
   "name": "@woodpatch/gcode-server",
   "version": "0.0.0",
   "private": true,
-  "description": "Private HTTP service (POST /analyse, /transform, /estimate) that PRISM calls for server-side machining-time estimates.",
+  "description": "An HTTP service for server-side analysis, transforms and machining-time estimates.",
   "license": "MIT"
 }

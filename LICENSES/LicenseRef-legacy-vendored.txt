@@ -1,17 +1,20 @@
 Third-party libraries vendored by upstream webgcode (legacy/webapp/libs/**).
 
-These files were bundled into nraynaud/webgcode by its author and arrived with
-the fork's history. Each is the work of its own authors and is under its own
-licence; where a file carries a licence header, that header is authoritative.
-They have NOT been individually audited by this project.
+These files were bundled into nraynaud/webgcode by its author. They are
+redistributed here exactly as received from upstream, as part of the fork's
+history and its parked legacy/ tree. Each file is the work of its own authors
+and remains under its own licence. Where a file carries a licence header, that
+header is authoritative.
 
-They are parked, not used: nothing under legacy/ is built, bundled, published
-or served by any package in this repository, and legacy/ is slated for deletion
-after one release (docs/DECISIONS.md, ADR-0005). Git history and the tag
-upstream-2025-09-18 preserve them regardless.
+The per-library licences have not yet been recorded individually. That audit is
+scheduled before Phase 1 relies on anything in this directory beyond
+libs/jsparse.js. It will replace this identifier with real SPDX identifiers per
+library in REUSE.toml (docs/DECISIONS.md, ADR-0005).
 
-Do not import from, copy out of, or redistribute anything in legacy/webapp/libs/
-without first establishing that file's actual licence. The one planned exception
-is the Phase 1 characterisation harness (tools/legacy-harness.js), which loads
+Nothing here is built, bundled, published as a package or served by this
+project. The Phase 1 characterisation harness (tools/legacy-harness.cjs) loads
 libs/jsparse.js (Copyright (C) 2007 Chris Double, BSD-style licence per its
-header) at test time only, and never ships it.
+header) at test time only.
+
+Do not copy code out of this directory into the toolkit's own packages without
+first establishing that file's licence.

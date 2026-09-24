@@ -2,6 +2,6 @@
   "name": "@woodpatch/gcode-db",
   "version": "0.0.0",
   "private": true,
-  "description": "TypeScript types, JSON Schema and Zod for machine, tool and material records, shared with PRISM and the website.",
+  "description": "TypeScript types, JSON Schema and Zod for machine, tool and material records, shared by consuming applications.",
   "license": "MIT"
 }

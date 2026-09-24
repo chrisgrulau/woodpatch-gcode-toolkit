@@ -4,7 +4,7 @@
 /**
  * Where this toolkit comes from, as data rather than prose.
  *
- * Every surface that shows the toolkit (playground, staff portal, storefront)
+ * Every surface that shows the toolkit (the playground and any consuming application)
  * should render its credit line from this object instead of hard-coding one,
  * so the wording, the upstream link and the licence stay the same everywhere
  * and have one place to change.

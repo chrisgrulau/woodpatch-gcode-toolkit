@@ -93,8 +93,8 @@ for (const dir of readdirSync(packagesDir)) {
 
   // ── Survives a minified consumer build ──
   // `inline` and `eof` are the two esbuild modes that preserve legal comments.
-  // Vite's production build drops them by default, which is why the storefront
-  // and staff-portal builds must opt in (told to their owners; ADR-0009).
+  // Vite's production build drops them by default, which is why consuming
+  // applications must opt in (ADR-0009).
   for (const legalComments of ['inline', 'eof']) {
     const out = await build({
       stdin: { contents: `export * from ${JSON.stringify(entryPath)};`, resolveDir: pkgDir },

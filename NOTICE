@@ -18,9 +18,9 @@ moved or deleted. It is upstream's text, not ours.
                 published it. Untouched.
   LICENSE       this fork's licence: MIT.
 
-ELECTION: this fork is distributed under the MIT option (operator decision,
-2026-09-22, recorded on issue #1167). Electing one arm of a dual licence does
-not remove the other from upstream's own work — anyone may still obtain webgcode
+ELECTION: this fork is distributed under the MIT option (decided 2026-09-22;
+see docs/DECISIONS.md, ADR-0001). Electing one arm of a dual licence does not
+remove the other from upstream's own work — anyone may still obtain webgcode
 from Nicolas Raynaud under either licence.
 
 Substantial portions of this work are derived from upstream and remain subject

@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 
 # @woodpatch/gcode-server
 
-Private HTTP service (POST /analyse, /transform, /estimate) that PRISM calls for server-side machining-time estimates.
+An HTTP service for server-side analysis, transforms and machining-time estimates.
 
 **Placeholder.** It arrives in Phase 5 (see `docs/PLAN.md`). It stays `"private": true`
 until it has code; at that point it adopts `packages/core`'s build and publishing
