@@ -1,0 +1,17 @@
+Third-party libraries vendored by upstream webgcode (legacy/webapp/libs/**).
+
+These files were bundled into nraynaud/webgcode by its author and arrived with
+the fork's history. Each is the work of its own authors and is under its own
+licence; where a file carries a licence header, that header is authoritative.
+They have NOT been individually audited by this project.
+
+They are parked, not used: nothing under legacy/ is built, bundled, published
+or served by any package in this repository, and legacy/ is slated for deletion
+after one release (docs/DECISIONS.md, ADR-0005). Git history and the tag
+upstream-2025-09-18 preserve them regardless.
+
+Do not import from, copy out of, or redistribute anything in legacy/webapp/libs/
+without first establishing that file's actual licence. The one planned exception
+is the Phase 1 characterisation harness (tools/legacy-harness.js), which loads
+libs/jsparse.js (Copyright (C) 2007 Chris Double, BSD-style licence per its
+header) at test time only, and never ships it.

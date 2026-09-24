@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
+# SPDX-License-Identifier: MIT
+#
+# Licensing for files that cannot carry an inline SPDX header. Kept deliberately
+# NARROW: code, docs and scripts carry their own header, and `reuse lint` in CI
+# fails any file that has neither. Do not add a catch-all glob here, because that
+# would silently license every future file and defeat the check.
+version = 1
+
+# Machine-written or comment-less config files (JSON has no comment syntax).
+[[annotations]]
+path = [
+  "package.json",
+  "packages/*/package.json",
+  "pnpm-lock.yaml",
+  "tsconfig*.json",
+  "packages/*/tsconfig*.json",
+  ".changeset/config.json",
+  ".gitignore",
+  ".prettierignore",
+  ".editorconfig",
+  ".nvmrc",
+  "NOTICE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden"
+SPDX-License-Identifier = "MIT"
+
+# Upstream's own work, parked under legacy/ (ADR-0005). Offered by its author
+# under MIT OR AGPL-3.0 (see LICENSE.txt, upstream's file, unmodified).
+[[annotations]]
+path = "legacy/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2016 Nicolas Raynaud"
+SPDX-License-Identifier = "MIT OR AGPL-3.0-only"
+
+# Third-party libraries upstream vendored. Each keeps its own licence; not
+# audited, never built or shipped. Later annotations win, so this overrides the
+# legacy/** block above for these paths only.
+[[annotations]]
+path = "legacy/webapp/libs/**"
+precedence = "override"
+SPDX-FileCopyrightText = "The respective authors of each vendored library"
+SPDX-License-Identifier = "LicenseRef-legacy-vendored"

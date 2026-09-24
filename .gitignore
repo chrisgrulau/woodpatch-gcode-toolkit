@@ -1,1 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+# Copied from the repo root into each package at build time (scripts/sync-licence-files.mjs).
+packages/*/LICENSE
+packages/*/NOTICE
 legacy/.idea/workspace.xml

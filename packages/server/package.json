@@ -1,0 +1,7 @@
+{
+  "name": "@woodpatch/gcode-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private HTTP service (POST /analyse, /transform, /estimate) that PRISM calls for server-side machining-time estimates.",
+  "license": "MIT"
+}

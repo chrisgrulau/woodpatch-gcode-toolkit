@@ -1,0 +1,7 @@
+{
+  "name": "@woodpatch/gcode-svelte",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Svelte 5 components wrapping the viewer and editor, shared by the staff portal and the public storefront.",
+  "license": "MIT"
+}
