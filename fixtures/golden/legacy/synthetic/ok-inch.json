@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/ok-inch.ngc",
+    "sha256": "c83f9910c5827390a7a92e95ce2d22b7a5812ed8e5b70e87b0b39afd9c323da4",
+    "bytes": 47
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [],
+  "console": [],
+  "summary": {
+    "segments": 3,
+    "byKindAndSpeed": {
+      "arc:normal": 1,
+      "line:normal": 2
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        76.178302,
+        50.778302,
+        0
+      ]
+    },
+    "simulatedTotalTimeSeconds": 46.459744,
+    "simulatorErrors": []
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 3,
+    "sha256": "994699080960eade7ddb2678782c408821a59322e2625d2f6dbedab8ca1d8bde",
+    "segments": [
+      ["L",1,"normal",254,[0,0,0],[25.4,25.4,0]],
+      ["A",2,"normal",254,[25.4,25.4,0],[50.8,0,0],"xy",[50.8,25.4,0],25.4,-3.141593,-4.712389],
+      ["L",4,"normal",254,[50.8,0,0],[10,0,0]]
+    ]
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/enc-cr.ngc",
+    "sha256": "f14b11d93d7cfac89a261aa047f876ebe0ec0f4779f0964df2d19c7e55cbcf5c",
+    "bytes": 27
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [],
+  "console": [],
+  "summary": {
+    "segments": 1,
+    "byKindAndSpeed": {
+      "line:normal": 1
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        10,
+        10,
+        0
+      ]
+    },
+    "simulatedTotalTimeSeconds": 8.503615,
+    "simulatorErrors": []
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 1,
+    "sha256": "7703f2c7e28ded26b603e9d475b2d3cd340efb912f26aa006df2e3ce1bcfe394",
+    "segments": [
+      ["L",0,"normal",100,[0,0,0],[10,10,0]]
+    ]
+  }
+}

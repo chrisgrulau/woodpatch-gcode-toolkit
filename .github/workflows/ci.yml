@@ -54,7 +54,11 @@ jobs:
         run: pnpm test
       - name: Vendored-library licence records match the audit table
         run: node tools/gen-legacy-licences.mjs --check
-      - name: Legacy harness smoke test
+      - name: Legacy goldens are current (upstream's recorded behaviour)
+        # Regenerates every golden from the fixtures and fails on any difference, so
+        # goldens only change through the reviewed generator (ADR-0012).
+        run: node tools/golden-legacy.cjs --check
+      - name: Legacy harness tests (smoke + plan §2.4 reference values)
         run: node --test 'tools/**/*.test.cjs'
       - name: Build
         run: pnpm build

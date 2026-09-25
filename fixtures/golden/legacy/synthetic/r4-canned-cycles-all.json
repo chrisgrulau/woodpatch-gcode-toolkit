@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/r4-canned-cycles-all.ngc",
+    "sha256": "b3c945f2fa767b92479bab24815510889a33238ae35815c57557934d34bc2f6e",
+    "bytes": 211
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [
+    {
+      "lineNo": 0,
+      "message": "Did not understand G98, skipping",
+      "line": "G21 G90 G98"
+    },
+    {
+      "lineNo": 2,
+      "message": "Did not understand G81, skipping",
+      "line": "G81 X10 Y10 Z-3 R1 F100"
+    },
+    {
+      "lineNo": 3,
+      "message": "Did not understand G82, skipping",
+      "line": "G82 X20 Y10 Z-3 R1 P0.5"
+    },
+    {
+      "lineNo": 4,
+      "message": "did not understand line",
+      "line": "G83 X30 Y10 Z-9 R1 Q3"
+    },
+    {
+      "lineNo": 5,
+      "message": "Did not understand G84, skipping",
+      "line": "G84 X40 Y10 Z-3 R1"
+    },
+    {
+      "lineNo": 6,
+      "message": "Did not understand G85, skipping",
+      "line": "G85 X50 Y10 Z-3 R1"
+    },
+    {
+      "lineNo": 7,
+      "message": "Did not understand G86, skipping",
+      "line": "G86 X60 Y10 Z-3 R1"
+    },
+    {
+      "lineNo": 8,
+      "message": "Did not understand G87, skipping",
+      "line": "G87 X70 Y10 Z-3 R1"
+    },
+    {
+      "lineNo": 9,
+      "message": "Did not understand G88, skipping",
+      "line": "G88 X80 Y10 Z-3 R1"
+    },
+    {
+      "lineNo": 10,
+      "message": "Did not understand G89, skipping",
+      "line": "G89 X90 Y10 Z-3 R1 P0.5"
+    }
+  ],
+  "console": [],
+  "summary": {
+    "segments": 9,
+    "byKindAndSpeed": {
+      "line:rapid": 9
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        -3
+      ],
+      "max": [
+        90,
+        10,
+        5
+      ]
+    },
+    "simulatedTotalTimeSeconds": 2.771189,
+    "simulatorErrors": [
+      "{\"lineNo\":0,\"message\":\"Did not understand G98, skipping\",\"line\":\"G21 G90 G98\"}",
+      "{\"lineNo\":2,\"message\":\"Did not understand G81, skipping\",\"line\":\"G81 X10 Y10 Z-3 R1 F100\"}",
+      "{\"lineNo\":3,\"message\":\"Did not understand G82, skipping\",\"line\":\"G82 X20 Y10 Z-3 R1 P0.5\"}",
+      "{\"lineNo\":4,\"message\":\"did not understand line\",\"line\":\"G83 X30 Y10 Z-9 R1 Q3\"}",
+      "{\"lineNo\":5,\"message\":\"Did not understand G84, skipping\",\"line\":\"G84 X40 Y10 Z-3 R1\"}",
+      "{\"lineNo\":6,\"message\":\"Did not understand G85, skipping\",\"line\":\"G85 X50 Y10 Z-3 R1\"}",
+      "{\"lineNo\":7,\"message\":\"Did not understand G86, skipping\",\"line\":\"G86 X60 Y10 Z-3 R1\"}",
+      "{\"lineNo\":8,\"message\":\"Did not understand G87, skipping\",\"line\":\"G87 X70 Y10 Z-3 R1\"}",
+      "{\"lineNo\":9,\"message\":\"Did not understand G88, skipping\",\"line\":\"G88 X80 Y10 Z-3 R1\"}",
+      "{\"lineNo\":10,\"message\":\"Did not understand G89, skipping\",\"line\":\"G89 X90 Y10 Z-3 R1 P0.5\"}"
+    ]
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 9,
+    "sha256": "bcb63448da8e20281b7436f0be07035714a32e65ce8fa6cc3c0aa9e6d8c53209",
+    "segments": [
+      ["L",1,"rapid",3000,[0,0,0],[0,0,5]],
+      ["L",2,"rapid",3000,[0,0,5],[10,10,-3]],
+      ["L",3,"rapid",3000,[10,10,-3],[20,10,-3]],
+      ["L",5,"rapid",3000,[20,10,-3],[40,10,-3]],
+      ["L",6,"rapid",3000,[40,10,-3],[50,10,-3]],
+      ["L",7,"rapid",3000,[50,10,-3],[60,10,-3]],
+      ["L",8,"rapid",3000,[60,10,-3],[70,10,-3]],
+      ["L",9,"rapid",3000,[70,10,-3],[80,10,-3]],
+      ["L",10,"rapid",3000,[80,10,-3],[90,10,-3]]
+    ]
+  }
+}

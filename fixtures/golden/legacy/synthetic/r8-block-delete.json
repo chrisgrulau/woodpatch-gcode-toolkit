@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/r8-block-delete.ngc",
+    "sha256": "6195925dcee408ec950d415ea8b117a660b3e8d1061973c65029f36205fdf9eb",
+    "bytes": 35
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [
+    {
+      "lineNo": 2,
+      "message": "did not understand line",
+      "line": "/G1 X20"
+    }
+  ],
+  "console": [],
+  "summary": {
+    "segments": 2,
+    "byKindAndSpeed": {
+      "line:normal": 2
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        30,
+        0,
+        0
+      ]
+    },
+    "simulatedTotalTimeSeconds": 18.018333,
+    "simulatorErrors": [
+      "{\"lineNo\":2,\"message\":\"did not understand line\",\"line\":\"/G1 X20\"}"
+    ]
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 2,
+    "sha256": "271ad34a3a63ce04b0d8bd8fb8f632e7fd03d2d4f4bdce653baeea08bf522bf6",
+    "segments": [
+      ["L",1,"normal",100,[0,0,0],[10,0,0]],
+      ["L",3,"normal",100,[10,0,0],[30,0,0]]
+    ]
+  }
+}

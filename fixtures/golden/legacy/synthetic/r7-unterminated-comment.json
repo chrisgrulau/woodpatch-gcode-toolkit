@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/r7-unterminated-comment.ngc",
+    "sha256": "08888ffc2a35e2cdc640a3a82668f0dc86c8e1042e47acbc191f123f51955e4f",
+    "bytes": 40
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [
+    {
+      "lineNo": 1,
+      "message": "did not understand line",
+      "line": "G1 X5 F100 (unterminated"
+    }
+  ],
+  "console": [],
+  "summary": {
+    "segments": 1,
+    "byKindAndSpeed": {
+      "line:normal": 1
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        10,
+        0,
+        0
+      ]
+    },
+    "simulatedTotalTimeSeconds": 3.026667,
+    "simulatorErrors": [
+      "{\"lineNo\":1,\"message\":\"did not understand line\",\"line\":\"G1 X5 F100 (unterminated\"}"
+    ]
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 1,
+    "sha256": "62c2fed2c0253cbae9e1d723e01e26da2e0a75d3e0bd5d985fb4dcc1a793fa82",
+    "segments": [
+      ["L",2,"normal",200,[0,0,0],[10,0,0]]
+    ]
+  }
+}

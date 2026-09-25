@@ -39,7 +39,7 @@ SPDX-License-Identifier = "MIT OR AGPL-3.0-only"
 # test. A comment line would alter what the parser sees, and some cases test
 # the first bytes, line endings or byte-order marks.
 [[annotations]]
-path = ["fixtures/synthetic/**"]
+path = ["fixtures/synthetic/**", "fixtures/golden/legacy/synthetic/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden"
 SPDX-License-Identifier = "MIT"
@@ -51,6 +51,14 @@ path = ["fixtures/upstream/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2016 Nicolas Raynaud"
 SPDX-License-Identifier = "MIT OR AGPL-3.0-only"
+
+# Goldens recorded from upstream's own sample programs are derived from those
+# files, so both copyright holders appear. MIT is the arm elected in ADR-0001.
+[[annotations]]
+path = ["fixtures/golden/legacy/upstream/**"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2016 Nicolas Raynaud", "2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden"]
+SPDX-License-Identifier = "MIT"
 
 # Third-party libraries upstream vendored in legacy/webapp/libs/. Each keeps its
 # own licence (audited 2026-09-25, docs/legacy-libraries.md). Later annotations

@@ -242,6 +242,52 @@ descriptions, comments and docs name no internal hosts, systems or customers, an
 refer to consumers only as "consuming applications". Customer G-code never enters
 this repository or its history.
 
+## ADR-0012: Characterisation goldens: what they record, and how big they may be
+
+**Status:** Accepted, 2026-09-25 (operator chose "option C").
+
+**Context.** Phase 2 rewrites upstream's parser. To show that every behaviour change is
+deliberate, upstream's own output (bugs included) is recorded first, as _goldens_. A full
+path for the large upstream samples would be about 46 MB (aztec alone is 34 MB), and
+git keeps every version forever.
+
+**Decision.**
+
+- `tools/golden-legacy.cjs` runs upstream's parser and simulator (via
+  `tools/legacy-harness.cjs`) over `fixtures/synthetic/` and `fixtures/upstream/`, and
+  writes `fixtures/golden/legacy/**.json`. Each golden records:
+  - the outcome (ok, or the thrown error's class);
+  - upstream's reported errors;
+  - its console output;
+  - the simulator's bounding box and time;
+  - the path, as compact tuples.
+- **Size policy (option C).** A path of at most 10,000 segments is stored in full.
+  Above that, the golden stores the summary, the first and last 200 segments, and a
+  SHA-256 of the full canonical path. Any change to any segment is detected, and
+  `--full <file>` prints the whole path locally for diagnosis. Total size is about
+  590 KB, against about 46 MB for full paths.
+- Numbers are rounded to 6 decimals and `-0` is normalised. NaN and ±Infinity are
+  stored as strings, because upstream really produces them (R2).
+- The worker `$` (what the live simulator ran) is the primary record. For synthetic
+  cases, the jQuery-faithful `$` is also run and recorded only where it differs. Today
+  that is R1 with `SIN`, exactly the root cause the plan identified.
+- **CI regenerates every golden and fails on any difference**, so goldens change only
+  through the reviewed generator. `tools/legacy-reference.test.cjs` checks the goldens
+  against independently published reference measurements (error counts, bounding
+  boxes, times) for all four upstream samples.
+
+**Consequences.** Where upstream was right, Phase 2 must match these goldens; where it
+was wrong, it must differ, and each difference is listed. Deleting or regenerating a
+golden to make a test pass defeats the purpose, so the generator is the only writer.
+
+## ADR-0013: Commit identity
+
+**Status:** Accepted, 2026-09-25.
+
+**Decision.** Keep the current commit identity. Squash-merges on `main` are authored by
+the automation bot's GitHub no-reply address, and the branch commits' `Signed-off-by:`
+lines keep the contributing role's address. Past history is not rewritten.
+
 ---
 
 ## Pending decisions
