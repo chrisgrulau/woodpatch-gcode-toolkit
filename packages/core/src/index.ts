@@ -4,10 +4,8 @@
 /**
  * @woodpatch/gcode-core: public entry point.
  *
- * Phase 0 (scaffold). The tokenizer, line model, interpreter and diagnostics
- * arrive in Phase 2 (plan §4.2). Until then, the package exists so that the
- * build, the licence banner and the packaging checks run against a real
- * artefact from day one, rather than being bolted on once there is code to
- * protect.
+ * Phase 2 in progress. The lossless line model, tokenizer and writer (parcel 2a)
+ * are here; expressions, the interpreter, the path model and dialects follow.
  */
 export { ATTRIBUTION, type Attribution } from './attribution.js';
+export * from './syntax/index.js';

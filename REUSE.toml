@@ -16,6 +16,7 @@ path = [
   "tsconfig*.json",
   "packages/*/tsconfig*.json",
   ".changeset/config.json",
+  ".changeset/*.md",
   ".gitignore",
   ".prettierignore",
   ".editorconfig",

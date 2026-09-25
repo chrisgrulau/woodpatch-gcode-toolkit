@@ -15,6 +15,11 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Tests index into arrays they have just built; `!` there is noise, not risk.
+    files: ['**/*.test.ts'],
+    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
+  },
+  {
     files: ['**/*.cjs'],
     languageOptions: { sourceType: 'commonjs', globals: globals.node },
     rules: {
