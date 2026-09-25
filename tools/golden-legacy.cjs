@@ -241,8 +241,19 @@ function main() {
 
   const check = process.argv.includes('--check');
   const corpusArg = arg('--corpus');
+  const outArg = arg('--out');
+  // --out is REQUIRED with --corpus, and may not be a directory that holds anything
+  // but goldens. The generator deletes orphan goldens, so an --out that defaulted to
+  // the working directory once deleted package.json (reviewer, PR #5).
+  if (corpusArg) {
+    if (!outArg) return usageError('--corpus requires --out <dir>');
+    const out = path.resolve(outArg);
+    const bad = [ROOT, path.resolve(corpusArg), process.cwd(), path.parse(out).root];
+    if (bad.includes(out))
+      return usageError(`refusing --out ${outArg}: it must be a dedicated goldens directory`);
+  }
   const corpora = corpusArg
-    ? [{ dir: path.resolve(corpusArg), out: path.resolve(arg('--out') || '.'), jquery: false }]
+    ? [{ dir: path.resolve(corpusArg), out: path.resolve(outArg), jquery: false }]
     : [
         {
           dir: path.join(ROOT, 'fixtures/synthetic'),
@@ -266,6 +277,8 @@ function main() {
     const expected = new Set();
     for (const f of inputs) {
       const outName = f.replace(/\.[^.]+$/, '') + '.json';
+      // foo.nc and foo.ngc would both write foo.json, and the last would silently win.
+      if (expected.has(outName)) return usageError(`two inputs map to ${outName} in ${c.dir}`);
       expected.add(outName);
       const rel = path.relative(ROOT, path.join(c.dir, f)).split(path.sep).join('/');
       const want = serialise(
@@ -282,9 +295,11 @@ function main() {
         console.log(`wrote ${path.relative(ROOT, outPath)}`);
       }
     }
-    // A golden whose fixture was deleted is stale too.
+    // A golden whose fixture was deleted is stale too. Only files THIS generator wrote
+    // are ever candidates: any other .json in the directory is left strictly alone.
     for (const f of fs.readdirSync(c.out).filter((f) => f.endsWith('.json'))) {
       if (expected.has(f)) continue;
+      if (!isOurGolden(path.join(c.out, f))) continue;
       if (check) {
         console.error(`orphan golden (no fixture): ${path.relative(ROOT, path.join(c.out, f))}`);
         stale++;
@@ -297,6 +312,19 @@ function main() {
   if (stale)
     console.error(`${stale} golden(s) stale. Regenerate with: node tools/golden-legacy.cjs`);
   return stale ? 1 : 0;
+}
+
+function isOurGolden(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')).generator === 'tools/golden-legacy.cjs';
+  } catch {
+    return false;
+  }
+}
+
+function usageError(msg) {
+  console.error(`golden-legacy: ${msg}`);
+  return 2;
 }
 
 process.exitCode = main();
