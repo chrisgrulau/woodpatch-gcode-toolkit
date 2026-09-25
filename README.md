@@ -23,7 +23,7 @@ It's also a trap, because anything new (say a drag knife, a laser head or an ext
 Web Stuff
 ---------
 
-[![visucam screen capture](images/visucam_pockets_thumb.png)](images/visucam_pockets.png) [![visucam screen capture](images/visucam_3D_thumb.png)](images/visucam_3D.png)
+[![visucam screen capture](legacy/images/visucam_pockets_thumb.png)](legacy/images/visucam_pockets.png) [![visucam screen capture](legacy/images/visucam_3D_thumb.png)](legacy/images/visucam_3D.png)
 
 A preliminary CAM system for toolpath generation is present here: http://nraynaud.github.io/webgcode/webapp/visucamTest.html#/
 
@@ -34,7 +34,7 @@ There is a g-code simulator here: http://nraynaud.github.io/webgcode/ (that's wh
 Controller Board
 ----------------
 
-[![Controller board schematics](images/DISCOVERY_interface_thumb.png)](images/DISCOVERY_interface.png)
+[![Controller board schematics](legacy/images/DISCOVERY_interface_thumb.png)](legacy/images/DISCOVERY_interface.png)
 
 The controller is a STM32F4-DISCOVERY board directly connected to the stepper drivers isolators (open drain configuration).
 There is a USB cable between the board and the laptop, where a Chrome application controls the machine.
@@ -53,7 +53,7 @@ Yes, I called the directory "interpolator" and no, there is no interpolation cod
 IO Board
 --------
 
-[![IO board schematics](images/IO_interface_thumb.png)](images/IO_interface.png)
+[![IO board schematics](legacy/images/IO_interface_thumb.png)](legacy/images/IO_interface.png)
 
 There is an IO board to connect the MCU to various things, mainly the Huanyang VFD. On this last one, the output 
 optoisolators (UPF and DRV) were not populated, so I just bought some on eBay and soldered them on (ok, I admit, I might
@@ -65,7 +65,7 @@ The board consists of one 74HC595 and one 74HC165, behind a digital isolator; th
 Chrome Application
 ------------------
 
-[![controller screen capture](images/controller_full_thumb.png)](images/controller_full.png)
+[![controller screen capture](legacy/images/controller_full_thumb.png)](legacy/images/controller_full.png)
 
 On the computer, you can send the program to the machine. The application's main part is simply an iframe with the normal 
 CAM html page in it (they talk with messages).
