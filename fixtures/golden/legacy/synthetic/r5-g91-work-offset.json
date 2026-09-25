@@ -52,7 +52,7 @@
         "from [x,y,z]",
         "to [x,y,z]",
         "plane (first+second coord, e.g. \"xy\", \"zx\")",
-        "centre [x,y,z] (centerInPlane)",
+        "centre in PLANE coordinates [first, second, 0] (upstream centerInPlane; G18 = [z, x], G19 = [y, z])",
         "radius",
         "fromAngle (rad)",
         "angularDistance (rad; sign = direction)"
