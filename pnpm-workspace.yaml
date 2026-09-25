@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
+# SPDX-License-Identifier: MIT
+packages:
+  - packages/*
+  - apps/*
+
+# Supply-chain cooldown: never resolve a version published less than 7 days ago.
+# Most malicious npm releases are caught and unpublished within that window.
+minimumReleaseAge: 10080
+
+# Dependency lifecycle scripts are blocked unless listed here as true, which
+# should happen only after reading what the script does.
+allowBuilds:
+  # Reviewed, left blocked. esbuild's script only swaps its JS shim for the native
+  # binary to save startup time. The binary arrives anyway via the optional
+  # @esbuild/<platform> package, and esbuild works without the script.
+  esbuild: false

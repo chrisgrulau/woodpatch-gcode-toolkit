@@ -1,0 +1,7 @@
+{
+  "name": "@woodpatch/gcode-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "An HTTP service for server-side analysis, transforms and machining-time estimates.",
+  "license": "MIT"
+}

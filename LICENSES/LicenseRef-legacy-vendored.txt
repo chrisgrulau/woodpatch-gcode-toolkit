@@ -1,0 +1,20 @@
+Third-party libraries vendored by upstream webgcode (legacy/webapp/libs/**).
+
+These files were bundled into nraynaud/webgcode by its author. They are
+redistributed here exactly as received from upstream, as part of the fork's
+history and its parked legacy/ tree. Each file is the work of its own authors
+and remains under its own licence. Where a file carries a licence header, that
+header is authoritative.
+
+The per-library licences have not yet been recorded individually. That audit is
+scheduled before Phase 1 relies on anything in this directory beyond
+libs/jsparse.js. It will replace this identifier with real SPDX identifiers per
+library in REUSE.toml (docs/DECISIONS.md, ADR-0005).
+
+Nothing here is built, bundled, published as a package or served by this
+project. The Phase 1 characterisation harness (tools/legacy-harness.cjs) loads
+libs/jsparse.js (Copyright (C) 2007 Chris Double, BSD-style licence per its
+header) at test time only.
+
+Do not copy code out of this directory into the toolkit's own packages without
+first establishing that file's licence.

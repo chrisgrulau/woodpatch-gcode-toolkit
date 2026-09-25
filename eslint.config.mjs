@@ -1,0 +1,27 @@
+// SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
+// SPDX-License-Identifier: MIT
+import js from '@eslint/js';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  // legacy/ is upstream's parked tree: never linted, built or shipped (ADR-0005).
+  { ignores: ['legacy/', '**/dist/', '**/coverage/', 'node_modules/'] },
+  js.configs.recommended,
+  ...tseslint.configs.strict,
+  {
+    // Build and CI scripts run in Node.
+    files: ['scripts/**', 'tools/**', '*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: globals.node },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      // The legacy harness deletes require.cache entries on purpose, so that
+      // each \$ flavour gets a fresh jsparse instance.
+      '@typescript-eslint/no-dynamic-delete': 'off',
+    },
+  },
+);

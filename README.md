@@ -1,109 +1,74 @@
-Webgcode
-========
-The beginning of a browser integrated CNC milling machine.
+<!--
+SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
+SPDX-License-Identifier: MIT
+-->
 
-A bit of History
-================
+# Woodpatch G-code Toolkit
 
-I have a Mac, and there are no real software to control a milling machine from that kind of computer. I decided to hack 
-some random pieces of technology together.
-Other people might be interested so I did everything in web technologies for easy trial.
+A G-code parser, visualiser and machining-time estimator for CNC routers, written in
+TypeScript. It aims to handle real-world CAM output without silent errors, estimate
+cut time from calibrated machine parameters, and edit programs (translate, rotate,
+mirror, scale, unit conversion, feed override) while leaving untouched lines
+byte-for-byte identical.
 
-I am trying to remove the dependency on g-code, because I don't like it, but I might retain some compatibility, so that 
-users can tip toe into the system.
+> **Status: early development (Phase 0, scaffold).** There is nothing to use yet. The
+> packages below are placeholders apart from `@woodpatch/gcode-core`'s skeleton.
 
-I started by creating a g-code parser with a viewer, and generated the steps from that and was able to send them to the embedded system. 
-That's when I decided on the name of the project. 
+## Acknowledgements
 
-Today, there is no explicit way to send some g-code into the system. 
-The parser is there, it's plugged etc. I just don't have an UI to put it into the system. 
-I'm really into creating my own toolpath now, so it's an incentive to develop the code when I need something. 
-It's also a trap, because anything new (say a drag knife, a laser head or an extruder) needs few weeks of development before being able to use it.
+This project is a fork of **[webgcode](https://github.com/nraynaud/webgcode) by
+Nicolas Raynaud**, and it starts from his work. From webgcode it inherits the
+G-code parser and its grbl-derived arc maths, the trapezoidal speed planner behind
+the time estimate, and the design of the 2D/3D path viewer with editor-line
+highlighting. Those are being **rewritten** here in TypeScript, with a line model,
+diagnostics and a modern three.js/CodeMirror stack. The original code is kept
+unchanged under [`legacy/`](legacy/), with its full history. See
+[`legacy/README.upstream.md`](legacy/README.upstream.md) for the upstream project's
+own README.
 
-Web Stuff
----------
+webgcode is offered by its author under a choice of MIT **or** AGPL-3.0. This
+toolkit is distributed under the **MIT** option. Upstream's own licence file is
+preserved unmodified as [`LICENSE.txt`](LICENSE.txt), this project's licence is in
+[`LICENSE`](LICENSE), and [`NOTICE`](NOTICE) has the full attribution.
 
-[![visucam screen capture](legacy/images/visucam_pockets_thumb.png)](legacy/images/visucam_pockets.png) [![visucam screen capture](legacy/images/visucam_3D_thumb.png)](legacy/images/visucam_3D.png)
+**Fork point:** upstream `gh-pages` at `d315a359` ("add visucam link", 2025-09-18),
+tagged here as `upstream-2025-09-18`. Upstream's `gh-pages` and `master` branches
+are kept exactly as upstream left them.
 
-A preliminary CAM system for toolpath generation is present here: http://nraynaud.github.io/webgcode/webapp/visucamTest.html#/
+## Layout
 
-The application can import (drop the file on the window) STL, SVG, gerber and excellon file formats.
+| Path                 | What                                                                          |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `packages/core`      | `@woodpatch/gcode-core`: parser, interpreter, transforms, estimator (no deps) |
+| `packages/viewer`    | `@woodpatch/gcode-viewer`: 3D/2D path view _(placeholder)_                    |
+| `packages/editor`    | `@woodpatch/gcode-editor`: CodeMirror 6 G-code mode _(placeholder)_           |
+| `packages/svelte`    | `@woodpatch/gcode-svelte`: Svelte 5 components _(placeholder)_                |
+| `packages/server`    | `@woodpatch/gcode-server`: HTTP analyse/transform/estimate _(placeholder)_    |
+| `packages/db-schema` | `@woodpatch/gcode-db`: machine/tool/material schema _(placeholder)_           |
+| `tools/`             | Dev tooling, including the headless harness for the legacy parser             |
+| `legacy/`            | Upstream webgcode, parked: not built, linted or shipped                       |
+| `docs/`              | [`DECISIONS.md`](docs/DECISIONS.md): architecture decision records            |
 
-There is a g-code simulator here: http://nraynaud.github.io/webgcode/ (that's where the name of the project comes from).
+## Development
 
-Controller Board
-----------------
+Requires Node 22+ and pnpm 12 (the exact version is pinned in `package.json`).
 
-[![Controller board schematics](legacy/images/DISCOVERY_interface_thumb.png)](legacy/images/DISCOVERY_interface.png)
+```sh
+pnpm install
+pnpm lint        # ESLint + Prettier
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm licence:packages   # MIT notice present in every built package and minified bundle
+reuse lint              # every file carries copyright + licence information
+```
 
-The controller is a STM32F4-DISCOVERY board directly connected to the stepper drivers isolators (open drain configuration).
-There is a USB cable between the board and the laptop, where a Chrome application controls the machine.
-The controller is quite dumb, it gets a list of steps, direction and their timing from the computer and executes them. 
-The interpolation is entirely done offline on the computer.
+Contributions need a DCO sign-off; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-Pushing the user button (blue) enter the manual control mode, receiving a program on USB automatically exits the manual mode.
-The orange LED is on when manual is on. The manual control is made through joysticks.
+## Licence
 
-The controller is also connected to the VFD through an SPI isolated breakout board.
-
-The wiring is described in the [main.c](interpolator/main.c#L10) and [manual.c](interpolator/manual.c#L11) files.
-
-Yes, I called the directory "interpolator" and no, there is no interpolation code in it.
-
-IO Board
---------
-
-[![IO board schematics](legacy/images/IO_interface_thumb.png)](legacy/images/IO_interface.png)
-
-There is an IO board to connect the MCU to various things, mainly the Huanyang VFD. On this last one, the output 
-optoisolators (UPF and DRV) were not populated, so I just bought some on eBay and soldered them on (ok, I admit, I might
- have shorted the pins while the chips were in the mail, please don't tell my mom, yes she knows what 300VDC is, 
- she taught me when I was a kid).
-The board consists of one 74HC595 and one 74HC165, behind a digital isolator; the MCU communicates over SPI to get isolated IOs.
-
-
-Chrome Application
-------------------
-
-[![controller screen capture](legacy/images/controller_full_thumb.png)](legacy/images/controller_full.png)
-
-On the computer, you can send the program to the machine. The application's main part is simply an iframe with the normal 
-CAM html page in it (they talk with messages).
-
-The USB protocol is custom since I couldn't find any standard, tell me if you know of any USB protocol to send sequences 
-of steps to a machine (there is no g-code interpolator in the embedded system).
-
-This is all Chrome technology in the hope to remove OS re-compilation/deployment efforts.
-
-License
--------
-
-This code is licensed under MIT and Affero GPL double licensing.
-
-Contact
--------
-
-To contact me about anything, you can use the issues system, there is no traffic on it.
-
-
-Woodpatch fork
-==============
-
-This repository is a hard fork of [webgcode](https://github.com/nraynaud/webgcode)
-by Nicolas Raynaud, maintained by Woodpatch as the basis for a G-code
-parser/visualiser and a calibrated machining-time estimator.
-
-**Fork point:** `gh-pages` @ `d315a359` ("add visucam link", 2025-09-18), tagged
-here as `upstream-2025-09-18`. That tag is the frozen reference to diff against
-when pulling upstream changes; `gh-pages` and `master` are kept as upstream left
-them and are not developed on.
-
-Acknowledgements
-----------------
-
-The original work, and everything this fork starts from, is Nicolas Raynaud's.
-Upstream offers it under a choice of MIT **or** AGPL-3.0; this fork is
-distributed under the **MIT** option. Upstream's own licence file is preserved
-unmodified as `LICENSE.txt`, and this fork's licence is in `LICENSE`. See
-`NOTICE` for the full attribution and for the notice requirement that applies to
-built artefacts as well as to source.
+MIT; see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). If you bundle these packages,
+keep legal comments in your minifier output (for example esbuild
+`legalComments: 'inline'` or `'eof'`). Each package's built entry carries the MIT
+notice as a `/*! … */` banner, and MIT requires it to travel with copies of the
+software, minified ones included.

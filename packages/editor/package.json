@@ -1,0 +1,7 @@
+{
+  "name": "@woodpatch/gcode-editor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CodeMirror 6 language mode for G-code: tokens, folding, diagnostics from core, line-to-path highlight.",
+  "license": "MIT"
+}

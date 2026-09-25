@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
+# SPDX-License-Identifier: MIT
+#
+# CI for the toolkit. Deliberately uses NO `uses:` steps (ADR-0006): the repo's
+# Actions policy allows only chrisgrulau-defined actions, and plain shell with
+# pinned hashes is a smaller trust surface than any third-party action.
+#
+# GitHub-hosted runners only. This repository is public, so a self-hosted runner
+# would execute strangers' fork-PR code on Woodpatch infrastructure.
+#
+# Job names are the required-check names on `main`; renaming one means updating
+# branch protection too.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Values from the event, passed through env rather than interpolated into
+  # shell text, so they can never be parsed as script.
+  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  # ── Lint, typecheck, test, build, and the built-artefact licence checks ──
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        run: |
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "${GITHUB_SHA}"
+          git checkout -q --detach "${GITHUB_SHA}"
+      - name: Toolchain (Node + pnpm, hash-pinned)
+        run: .github/ci/setup-toolchain.sh
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Legacy harness smoke test
+        run: node --test 'tools/**/*.test.cjs'
+      - name: Build
+        run: pnpm build
+      - name: Licence notice survives into packages and minified bundles
+        run: pnpm licence:packages
+
+  # ── Every file carries copyright + licence information ──
+  reuse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        run: |
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "${GITHUB_SHA}"
+          git checkout -q --detach "${GITHUB_SHA}"
+      - name: reuse lint
+        # Pinned version; pipx runs it in a throwaway venv.
+        run: pipx run 'reuse==6.2.0' lint
+
+  # ── The fork's inheritance is intact, and PR commits carry a DCO sign-off ──
+  provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history, blobless)
+        run: |
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --filter=blob:none origin "${GITHUB_SHA}" ${BASE_SHA:+"$BASE_SHA"} ${HEAD_SHA:+"$HEAD_SHA"}
+          git checkout -q --detach "${GITHUB_SHA}"
+      - name: Upstream history preserved
+        # 954 = upstream's commit count at the fork point (plan §5 Phase 0).
+        # A shallow rewrite or a history-flattening re-import would fail this.
+        run: |
+          count=$(git rev-list --count HEAD)
+          echo "commits reachable from HEAD: $count"
+          test "$count" -ge 954
+          # The fork point (upstream gh-pages, tag upstream-2025-09-18) is an ancestor.
+          git merge-base --is-ancestor d315a359123b1a2ac49e0ef0b4510e70915c5b2b HEAD
+      - name: Upstream licence file unmodified, at its original path
+        # LICENSE.txt is Nicolas Raynaud's own dual-licence file. It must never be
+        # edited, moved or deleted (NOTICE, ADR-0001).
+        run: echo "d7fd338e223d0d59f2656c5009c7a1a006d8269ab61da6c29258e28cff940645  LICENSE.txt" | sha256sum -c -
+      - name: DCO sign-off on every PR commit
+        if: github.event_name == 'pull_request'
+        run: .github/ci/check-dco.sh "$BASE_SHA" "$HEAD_SHA"

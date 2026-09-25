@@ -1,0 +1,7 @@
+{
+  "name": "@woodpatch/gcode-viewer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "three.js 3D view and SVG/Canvas 2D view of a G-code path. Framework-free class API, worker-backed.",
+  "license": "MIT"
+}
