@@ -64,6 +64,9 @@ jobs:
         run: pnpm build
       - name: Licence notice survives into packages and minified bundles
         run: pnpm licence:packages
+      - name: Performance budget (ADR-0014)
+        # A ratio against upstream's parser, measured on this runner: machine-independent.
+        run: node tools/bench-core.mjs --ci
 
   # ── Every file carries copyright + licence information ──
   reuse:

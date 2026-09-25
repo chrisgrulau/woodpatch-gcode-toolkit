@@ -300,6 +300,13 @@ reference machine and pinned Node. After parcel 2a, the lossless tokenizer alone
 about 0.84 s (872,824 tokens, 0 diagnostics), which leaves about 1.1 s for the
 interpreter.
 
+**Enforced in CI** (amended 2026-09-26, reviewer, toolkit #10). Absolute times on a CI
+runner can't be compared with a target set on the reference machine, so CI checks a
+**ratio**: core parse + interpret of aztec, divided by upstream's own parse of aztec, both
+measured on the same runner in the same job (`node tools/bench-core.mjs --ci`). On the
+reference machine the target is 2000 / 1379 ms = **1.45×**. After parcel 2c-1 the ratio is
+about 1.3×, so the remaining budget is visible, and spending it fails the build.
+
 ## ADR-0015: Primary dialect is Masso G3, firmware v5.13
 
 **Status:** Accepted, 2026-09-26 (operator).
@@ -408,10 +415,16 @@ overflow, which fixes R1: its own example `[SIN[0]+10]` now simply evaluates to 
 program end.
 
 - **Order of execution** within a line follows RS274/NGC as LinuxCNC documents it
-  ("Order of Execution"), not the order the words are written. One deliberate
-  refinement: **F is converted with the length units in force at the end of its line**,
-  so `G20 G1 X1 F10` feeds at 10 in/min. Upstream fed at 10 mm/min (N2). A feed rate
-  set earlier is kept in mm/min, and a later unit change doesn't rescale it.
+  ("Order of Execution"), not the order the words are written. That includes **F
+  before G20/G21**: `G20 G1 X1 F10` from G21 feeds at 10 mm/min, as in LinuxCNC
+  (`execute_block` runs `convert_feed_rate` before `convert_length_units`). Controllers
+  disagree on this line, so it's **dialect data** (`InterpreterRules.feedUnits`:
+  `at-feed-step`, the LinuxCNC default, or `end-of-line`), and a line that changes units
+  alongside an F word gets a **warning** either way. A redundant G21 in a CAM header
+  doesn't warn. A feed set on an earlier line stays physically the same across a unit
+  change, as in LinuxCNC. _Amended 2026-09-26 (reviewer, toolkit #10): the first draft
+  used end-of-line units as the default, which is the opposite of LinuxCNC. Masso's
+  behaviour is not yet known; see ADR-0015._
 - **Positions are machine coordinates in millimetres.** Every move also carries the
   total work offset in force (coordinate system + G92/G52), so work coordinates are
   `position − offset`. G53, G10, G92 and coordinate-system changes then compose

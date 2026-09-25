@@ -56,9 +56,28 @@ describe('motion basics', () => {
 });
 
 describe('order of execution (RS274/NGC, not line order)', () => {
-  it('converts F with the units in force at the end of its line (fixes N2)', () => {
-    const [m] = moves(run('G21\nG20 G1 X1 F10').steps);
-    expect(m).toMatchObject({ feed: { mmPerMinute: 254 }, to: { X: 25.4 } });
+  it("reads F BEFORE the line's G20/G21, as RS274 and LinuxCNC do, and warns that controllers differ", () => {
+    // LinuxCNC: execute_block runs convert_feed_rate (step 3) before convert_length_units (step 12).
+    const r = run('G21\nG20 G1 X1 F10');
+    expect(moves(r.steps)[0]).toMatchObject({ feed: { mmPerMinute: 10 }, to: { X: 25.4 } });
+    expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_FEED_UNITS_AMBIGUOUS']);
+    expect(r.diagnostics[0]!.message).toContain('mm/min');
+  });
+
+  it("reads F in the line's final units when the dialect says so", () => {
+    const r = run('G21\nG20 G1 X1 F10', { interpreterRules: { feedUnits: 'end-of-line' } });
+    expect(moves(r.steps)[0]).toMatchObject({ feed: { mmPerMinute: 254 } });
+    expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_FEED_UNITS_AMBIGUOUS']);
+  });
+
+  it('does not warn when the G20/G21 on the F line does not change units (the usual CAM header)', () => {
+    expect(codes('G21 G90 G94 F1000\nG1 X10')).toEqual([]);
+  });
+
+  it('keeps an earlier feed physically the same across a unit change', () => {
+    // As LinuxCNC re-reads the external feed on G20: the speed carries over; only the number is re-expressed.
+    const [m] = moves(run('G21 F600\nG20\nG1 X1').steps);
+    expect(m).toMatchObject({ feed: { mmPerMinute: 600 } });
   });
 
   it('applies plane, units and distance mode before the motion on the same line', () => {
@@ -111,6 +130,10 @@ describe('work offsets, G53, G92, homes', () => {
     expect(moves(r.steps).map((s) => s.to.X)).toEqual([0, 50]);
     expect(r.diagnostics).toEqual([]);
   });
+
+  it.todo(
+    'G92 and G10 L20 subtract the tool length offset on Z once tool tables exist (LinuxCNC convert_axis_offsets)',
+  );
 
   it('G92 offsets, and G92.1 cancels them', () => {
     const r = run('G21 G90\nG0 X10\nG92 X0\nG0 X5\nG92.1\nG0 X5');

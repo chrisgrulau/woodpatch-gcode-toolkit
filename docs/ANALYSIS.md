@@ -149,7 +149,12 @@ F is set first (`:487-489`), then each G word is applied in the order written
 (`:492-523`), then the motion runs (`:524-525`). Two consequences:
 
 - **The F word is converted by the unit mode in force _before_ the line**, so
-  `G20 G1 X1 F10` feeds at 10 mm/min instead of 254 (N2).
+  `G20 G1 X1 F10` from G21 feeds at 10 mm/min (N2). _Corrected 2026-09-26:_ this
+  **conforms** to RS274's order of execution (F at step 3, units at step 12) and matches
+  LinuxCNC (`execute_block` runs `convert_feed_rate` before `convert_length_units`;
+  reviewer, from LinuxCNC's source). It was first listed as a defect. It is really an
+  ambiguity between controllers, so the rewrite makes it dialect data and warns on such
+  lines (ADR-0019).
 - A non-modal code (G10) runs **mid-loop**, before G words that follow it on the same
   line.
 
@@ -174,8 +179,8 @@ F is set first (`:487-489`), then each G word is applied in the order written
   - **Helical** arcs interpolate the third axis linearly (`simulation.js:54`).
   - **Planes**: the transposer maps first/second/last coordinates (`:31-52`), which is
     correct for G17, G18 (ZX) and G19.
-- **Units**: G20 multiplies lengths by 25.4 via `unitMode` (`:108`), and so does F, but
-  with the ordering bug above (N2).
+- **Units**: G20 multiplies lengths by 25.4 via `unitMode` (`:108`), and so does F,
+  read before the line's unit change, as RS274 orders it (N2, conformant).
 
 ## 6. The time estimate (the simulator)
 
@@ -269,23 +274,23 @@ anyway (operator decision 2026-09-25).
 
 Every row is pinned by `tools/legacy-findings.test.cjs`.
 
-| ID  | Finding                                                                    | Where                       | Effect                                             | Severity                 |
-| --- | -------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------- | ------------------------ |
-| N1  | The simulated bounding box always includes the origin                      | `simulation.js:259`         | Box wrong for any job not spanning the origin      | Medium                   |
-| N2  | F on the same line as G20 is converted with the _previous_ units           | `parser.js:487-489`         | Feed 25.4× too slow on that line                   | Medium                   |
-| N3  | Repeated words: F uses the first value, axes use the last                  | `parser.js:489`, `:158`     | Inconsistent; should be an error                   | Low                      |
-| N4  | Bare-CR line endings: the whole file is one line                           | `parser.js:540`             | Silent, completely wrong path                      | High (for CR files)      |
-| N5  | G53: error reported, then the move runs in work coordinates                | `parser.js:517-525`         | Machine-coordinate moves land in the wrong place   | Medium                   |
-| N6  | G28/G30: error reported, then the move runs as an ordinary move            | same                        | Home/return drawn as a plain move                  | Medium                   |
-| N7  | Arcs under 3.6°: no time, no bounding box, and the estimate can _decrease_ | `simulation.js:57-59`       | **Under-estimates arc-fitted CAM output**          | **High (for estimates)** |
-| N8  | G4 dwell adds no time                                                      | `parser.js:63`              | Under-estimate                                     | Medium                   |
-| N9  | Rapids at the 3000 mm/min cap                                              | `parser.js:282`, `:531-538` | Rapid time is wrong for any real machine           | Medium                   |
-| N10 | No F ever given: feed is 200 mm/min, with no warning                       | `parser.js:281`             | Silent assumption                                  | Medium                   |
-| N11 | +10 ms fixed per stop                                                      | `simulation.js:265-268`     | Small systematic bias                              | Low                      |
-| N12 | M/S/T ignored, including M2/M30 program end (with R8)                      | grammar                     | No tool changes, spindle or end                    | Medium                   |
-| N13 | Trig functions use radians; RS274/NGC uses degrees                         | `parser.js:330-347`         | Silent wrong geometry in any trig-computed program | High (for such programs) |
-| N14 | MOD takes the dividend's sign; ROUND rounds halves up                      | `parser.js:368`, `:338`     | Differs from LinuxCNC on negative operands         | Low                      |
-| N15 | An undefined named parameter reads as 0                                    | `parser.js:325`             | A misspelt `#<name>` goes unnoticed                | Medium                   |
+| ID  | Finding                                                                                                                                                                       | Where                       | Effect                                             | Severity                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------- | ------------------------ |
+| N1  | The simulated bounding box always includes the origin                                                                                                                         | `simulation.js:259`         | Box wrong for any job not spanning the origin      | Medium                   |
+| N2  | F on the same line as G20 is read in the _previous_ units. **Conformant** with RS274 and LinuxCNC (corrected 2026-09-26); controllers differ, so it's a warning, not a defect | `parser.js:487-489`         | Surprising, not wrong                              | Info (reclassified)      |
+| N3  | Repeated words: F uses the first value, axes use the last                                                                                                                     | `parser.js:489`, `:158`     | Inconsistent; should be an error                   | Low                      |
+| N4  | Bare-CR line endings: the whole file is one line                                                                                                                              | `parser.js:540`             | Silent, completely wrong path                      | High (for CR files)      |
+| N5  | G53: error reported, then the move runs in work coordinates                                                                                                                   | `parser.js:517-525`         | Machine-coordinate moves land in the wrong place   | Medium                   |
+| N6  | G28/G30: error reported, then the move runs as an ordinary move                                                                                                               | same                        | Home/return drawn as a plain move                  | Medium                   |
+| N7  | Arcs under 3.6°: no time, no bounding box, and the estimate can _decrease_                                                                                                    | `simulation.js:57-59`       | **Under-estimates arc-fitted CAM output**          | **High (for estimates)** |
+| N8  | G4 dwell adds no time                                                                                                                                                         | `parser.js:63`              | Under-estimate                                     | Medium                   |
+| N9  | Rapids at the 3000 mm/min cap                                                                                                                                                 | `parser.js:282`, `:531-538` | Rapid time is wrong for any real machine           | Medium                   |
+| N10 | No F ever given: feed is 200 mm/min, with no warning                                                                                                                          | `parser.js:281`             | Silent assumption                                  | Medium                   |
+| N11 | +10 ms fixed per stop                                                                                                                                                         | `simulation.js:265-268`     | Small systematic bias                              | Low                      |
+| N12 | M/S/T ignored, including M2/M30 program end (with R8)                                                                                                                         | grammar                     | No tool changes, spindle or end                    | Medium                   |
+| N13 | Trig functions use radians; RS274/NGC uses degrees                                                                                                                            | `parser.js:330-347`         | Silent wrong geometry in any trig-computed program | High (for such programs) |
+| N14 | MOD takes the dividend's sign; ROUND rounds halves up                                                                                                                         | `parser.js:368`, `:338`     | Differs from LinuxCNC on negative operands         | Low                      |
+| N15 | An undefined named parameter reads as 0                                                                                                                                       | `parser.js:325`             | A misspelt `#<name>` goes unnoticed                | Medium                   |
 
 ## 11. Silent-failure inventory
 
@@ -294,7 +299,7 @@ nothing**. The Phase 2 rule (plan §4.2 item 4) is that each becomes a diagnosti
 
 R2 impossible or full-circle R arc · R3 arc without axis words · R5 offset re-added in
 G91 · R6 exponent read as an E axis · R8 moves after M2/M30 · R9 sub-10 µm moves dropped
-· R11 bounding-box under-report · N1 origin in the box · N2 F units · N3 repeated words
+· R11 bounding-box under-report · N1 origin in the box · N3 repeated words
 · N4 bare CR · N7 small arcs lost from time and box · N8–N10 time-model assumptions ·
 N12 ignored M/S/T · N13 trig in radians · N14 MOD/ROUND semantics · N15 undefined
 named parameters read as 0.
@@ -305,34 +310,34 @@ and the page hangs).
 
 ## 12. Keep / fix / drop
 
-| Behaviour                                                                    | Decision      | Why                                                                                         |
-| ---------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------- |
-| I/J and ±R arc maths (grbl), sweep normalisation, full circles by I/J        | **Keep**      | Correct; goldens `ok-*-arcs`, `ok-r-arcs-minor-major`                                       |
-| Plane transposer incl. G18 ZX order                                          | **Keep**      | Correct; `ok-planes`                                                                        |
-| Helical interpolation                                                        | **Keep**      | Correct; `ok-helical`                                                                       |
-| G20/G21, G90/G91, G54–G59.3, modal carry-over                                | **Keep**      | Correct; `ok-*` goldens                                                                     |
-| Comments, `N`, trailing- and leading-dot decimals, no-space lines, lowercase | **Keep**      | Correct                                                                                     |
-| `#n` and `#<name>` parameters, operator precedence, assignment-after-line    | **Keep**      | Correct per RS274                                                                           |
-| 1 µm display tessellation; Float32 chunking                                  | **Keep**      | Visually exact, fast                                                                        |
-| Line ↔ path editor highlight                                                 | **Keep** (UX) | Plan §2.3                                                                                   |
-| R1 expression recursion and `$.each` function registration                   | **Fix**       | Diagnostic, never a hang                                                                    |
-| R2 / R3 arc edge cases                                                       | **Fix**       | Diagnostic with a location; draw nothing silently never again                               |
-| R4 canned cycles                                                             | **Fix**       | Expand G81–G89 to real motion (plan §4.2 item 2)                                            |
-| R5 offsets in G91                                                            | **Fix**       | Apply offsets once, in absolute terms                                                       |
-| R6 exponents / E axis                                                        | **Fix**       | No E axis for CNC dialects; an exponent is a diagnostic                                     |
-| R7 A/B/C/D, unbalanced comments                                              | **Fix**       | Parse them; unsupported means a warning, and the line's other words survive                 |
-| R8 unsupported codes, M2/M30, `/`, O-words, `*nn`                            | **Fix**       | Per dialect profile; M2/M30 end the program                                                 |
-| R9 sub-10 µm drop                                                            | **Fix**       | Keep every move; flag degenerate ones                                                       |
-| N2 F conversion order, and line-order execution in general                   | **Fix**       | RS274 order of execution                                                                    |
-| N3 repeated words                                                            | **Fix**       | Diagnostic (repeating a word on one line is an RS274 error)                                 |
-| N4 bare CR                                                                   | **Fix**       | Accept LF, CRLF and CR                                                                      |
-| N5 / N6 G53, G28, G30                                                        | **Fix**       | Implement per dialect, or refuse the move with a diagnostic                                 |
-| N12 M/S/T                                                                    | **Fix**       | Model spindle, tool change and program end as events                                        |
-| N13–N15 trig units, MOD/ROUND, undefined names                               | **Fix**       | Degrees, with LinuxCNC semantics as the default. Every one is a per-dialect rule (ADR-0018) |
-| R10, N7–N11 time model                                                       | **Drop**      | Replaced by the calibrated estimator (Phase 5)                                              |
-| R11, N1 discretised bounding box                                             | **Drop**      | Exact geometry (plan §4.2 item 8)                                                           |
-| E axis                                                                       | **Drop**      | 3D-printer legacy; not in scope                                                             |
-| Ember/RequireJS/three.js-r73 views, Chrome app, firmware                     | **Drop**      | R14; rewritten in Phase 3, or out of scope                                                  |
+| Behaviour                                                                    | Decision                | Why                                                                                                                                              |
+| ---------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| I/J and ±R arc maths (grbl), sweep normalisation, full circles by I/J        | **Keep**                | Correct; goldens `ok-*-arcs`, `ok-r-arcs-minor-major`                                                                                            |
+| Plane transposer incl. G18 ZX order                                          | **Keep**                | Correct; `ok-planes`                                                                                                                             |
+| Helical interpolation                                                        | **Keep**                | Correct; `ok-helical`                                                                                                                            |
+| G20/G21, G90/G91, G54–G59.3, modal carry-over                                | **Keep**                | Correct; `ok-*` goldens                                                                                                                          |
+| Comments, `N`, trailing- and leading-dot decimals, no-space lines, lowercase | **Keep**                | Correct                                                                                                                                          |
+| `#n` and `#<name>` parameters, operator precedence, assignment-after-line    | **Keep**                | Correct per RS274                                                                                                                                |
+| 1 µm display tessellation; Float32 chunking                                  | **Keep**                | Visually exact, fast                                                                                                                             |
+| Line ↔ path editor highlight                                                 | **Keep** (UX)           | Plan §2.3                                                                                                                                        |
+| R1 expression recursion and `$.each` function registration                   | **Fix**                 | Diagnostic, never a hang                                                                                                                         |
+| R2 / R3 arc edge cases                                                       | **Fix**                 | Diagnostic with a location; draw nothing silently never again                                                                                    |
+| R4 canned cycles                                                             | **Fix**                 | Expand G81–G89 to real motion (plan §4.2 item 2)                                                                                                 |
+| R5 offsets in G91                                                            | **Fix**                 | Apply offsets once, in absolute terms                                                                                                            |
+| R6 exponents / E axis                                                        | **Fix**                 | No E axis for CNC dialects; an exponent is a diagnostic                                                                                          |
+| R7 A/B/C/D, unbalanced comments                                              | **Fix**                 | Parse them; unsupported means a warning, and the line's other words survive                                                                      |
+| R8 unsupported codes, M2/M30, `/`, O-words, `*nn`                            | **Fix**                 | Per dialect profile; M2/M30 end the program                                                                                                      |
+| R9 sub-10 µm drop                                                            | **Fix**                 | Keep every move; flag degenerate ones                                                                                                            |
+| N2 F units on a unit-change line; line-order execution in general            | **Keep (N2)** / **Fix** | N2 conforms to RS274 and LinuxCNC. Keep it as the default, make it dialect data, and warn. Line-order execution in general is fixed: RS274 order |
+| N3 repeated words                                                            | **Fix**                 | Diagnostic (repeating a word on one line is an RS274 error)                                                                                      |
+| N4 bare CR                                                                   | **Fix**                 | Accept LF, CRLF and CR                                                                                                                           |
+| N5 / N6 G53, G28, G30                                                        | **Fix**                 | Implement per dialect, or refuse the move with a diagnostic                                                                                      |
+| N12 M/S/T                                                                    | **Fix**                 | Model spindle, tool change and program end as events                                                                                             |
+| N13–N15 trig units, MOD/ROUND, undefined names                               | **Fix**                 | Degrees, with LinuxCNC semantics as the default. Every one is a per-dialect rule (ADR-0018)                                                      |
+| R10, N7–N11 time model                                                       | **Drop**                | Replaced by the calibrated estimator (Phase 5)                                                                                                   |
+| R11, N1 discretised bounding box                                             | **Drop**                | Exact geometry (plan §4.2 item 8)                                                                                                                |
+| E axis                                                                       | **Drop**                | 3D-printer legacy; not in scope                                                                                                                  |
+| Ember/RequireJS/three.js-r73 views, Chrome app, firmware                     | **Drop**                | R14; rewritten in Phase 3, or out of scope                                                                                                       |
 
 ## 13. Salvage review of the CAM code
 

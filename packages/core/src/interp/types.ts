@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ExpressionRules } from '../expr/rules.js';
+import type { InterpreterRules } from './rules.js';
 import type { Diagnostic } from '../syntax/types.js';
 
 /** The axes the interpreter tracks. XYZ move the tool; ABC are tracked but not simulated. */
@@ -77,6 +78,8 @@ export type Step =
 export interface InterpretOptions {
   /** Expression rules (ADR-0018). Default: LINUXCNC_RULES. */
   readonly rules?: ExpressionRules;
+  /** Controller-dependent interpreter behaviour (ADR-0019). Default: LINUXCNC_INTERPRETER_RULES. */
+  readonly interpreterRules?: InterpreterRules;
   /** The block-delete ("optional skip") switch: when on, lines starting "/" are skipped. Default: on. */
   readonly blockDelete?: boolean;
   /** Machine position before the first line. Default: all zeros. */

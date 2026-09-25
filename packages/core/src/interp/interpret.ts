@@ -6,6 +6,7 @@ import { parseExpression } from '../expr/parse.js';
 import { LINUXCNC_RULES, type ExpressionRules } from '../expr/rules.js';
 import type { Diagnostic, Line, Program, Severity, Span, Value } from '../syntax/types.js';
 import { G_CODES, M_CODES, codeKey } from './codes.js';
+import { LINUXCNC_INTERPRETER_RULES, type InterpreterRules } from './rules.js';
 import {
   AXES,
   type Axis,
@@ -96,6 +97,7 @@ interface Word {
 
 class Interpreter {
   private readonly rules: ExpressionRules;
+  private readonly behaviour: InterpreterRules;
   private readonly blockDelete: boolean;
   private readonly steps: Step[] = [];
   private readonly diagnostics: Diagnostic[] = [];
@@ -131,6 +133,7 @@ class Interpreter {
 
   constructor(options: InterpretOptions) {
     this.rules = options.rules ?? LINUXCNC_RULES;
+    this.behaviour = options.interpreterRules ?? LINUXCNC_INTERPRETER_RULES;
     this.blockDelete = options.blockDelete ?? true;
     this.position = { ...ZERO, ...options.start };
     this.numbered.set(5220, 1);
@@ -343,16 +346,28 @@ class Interpreter {
     if (g.has('93')) this.feedMode = 'inverse-time';
     if (g.has('94')) this.feedMode = 'per-minute';
     if (g.has('95')) this.feedMode = 'per-revolution';
-    // Units (G20/G21) are step 12, but F is converted with the units in force at the
-    // END of the line, so "G20 G1 X1 F10" feeds at 10 in/min (fixes N2; ADR-0019).
+    // Units (G20/G21) are step 12 and F is step 3, so by RS274 order F is read in the
+    // units in force before this line's G20/G21. Controllers disagree on this, so it's
+    // dialect data (InterpreterRules.feedUnits), and a line that actually changes units
+    // alongside an F word gets a warning either way.
     const unitsAfter = g.has('20') ? 'inch' : g.has('21') ? 'mm' : this.units;
     const f = get('F');
+    const feedUnits = this.behaviour.feedUnits === 'end-of-line' ? unitsAfter : this.units;
+    if (f && unitsAfter !== this.units) {
+      this.report(
+        n,
+        'warning',
+        'SEMANTIC_FEED_UNITS_AMBIGUOUS',
+        `F and a unit change (G${unitsAfter === 'inch' ? 20 : 21}) on one line: controllers disagree about F's units. Read here as ${feedUnits === 'inch' ? 'in' : 'mm'}/min`,
+        f.span,
+      );
+    }
     if (f) {
       if (f.value < 0)
         this.report(n, 'error', 'SEMANTIC_NEGATIVE_FEED', 'Feed rate cannot be negative', f.span);
       else
         this.feedRate =
-          this.feedMode === 'inverse-time' ? f.value : f.value * (unitsAfter === 'inch' ? 25.4 : 1);
+          this.feedMode === 'inverse-time' ? f.value : f.value * (feedUnits === 'inch' ? 25.4 : 1);
     }
     const s = get('S');
     if (s) {
