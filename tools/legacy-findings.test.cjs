@@ -62,15 +62,22 @@ test('N6: G28 reports an error, then runs as an ordinary move', () => {
   assert.equal(r.segs.at(-1).to.z, 0);
 });
 
-test('N7: arcs under ~3.6° add NO time and NO bounding box (plan R11, worse than listed)', () => {
+test('N7: arcs under 3.6° add no time or bounding box, and can make the estimate DECREASE', () => {
+  // A 3.6° boundary: steps = round(|sweep| / 2π × 50), zero below 3.6°.
   const base = 'G21 G90\nG1 X100 F600\n';
   const line = run(base);
-  const arc = run(base + 'G2 X110 Y-0.05 R1000\n'); // 10 mm, 0.57° sweep
+  const tiny = run(base + 'G2 X110 Y-0.05 R1000\n'); // 10 mm, 0.57° sweep
+  const under = run(base + 'G2 X105.234 Y-0.137 R100\n'); // 3.0° sweep, R100
+  const over = run(base + 'G2 X106.976 Y-0.244 R100\n'); // 4.0° sweep, R100: control
+  // Mechanism: the line no longer decelerates to zero at X100. Its deceleration
+  // moves into the arc, whose time is never sampled, so the total goes DOWN.
+  assert.ok(tiny.time < line.time, `0.57° arc must reduce time: ${tiny.time} vs ${line.time}`);
+  assert.ok(under.time < line.time, `3.0° arc must reduce time: ${under.time} vs ${line.time}`);
   assert.ok(
-    arc.time <= line.time,
-    `adding an arc must not add time upstream: ${arc.time} vs ${line.time}`,
+    over.time > line.time,
+    `4.0° arc (control) must add time: ${over.time} vs ${line.time}`,
   );
-  assert.equal(arc.max.x, 100); // the arc's end (x=110) is missing from the bbox
+  assert.equal(tiny.max.x, 100); // the arc's end (x=110) is missing from the bbox
 });
 
 test('N8: G4 dwell adds no time', () => {

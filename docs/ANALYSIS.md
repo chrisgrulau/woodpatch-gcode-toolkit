@@ -9,7 +9,11 @@ Phase 1 deliverable. This describes what upstream's previewer core **actually do
 `file:line` references into `legacy/webapp/`, so the Phase 2 rewrite changes behaviour
 deliberately and never by accident.
 
-**How every claim here is backed.** Nothing below is from reading alone:
+References to "the plan" (for example "plan §2.4") point to the programme's internal
+planning document, which is deliberately not published (ADR-0011). Everything needed to
+follow this analysis is in this repository.
+
+**How the claims are backed.** The behavioural claims in §2–§7 and §10 are not from reading alone. §8 (display) and §13 (CAM salvage) are from reading the code.
 
 | Evidence                                                                  | Where                                                              |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -81,8 +85,15 @@ Grammar at `parser.js:307-475`.
   not allowed, as in RS274.
 - **Binary operators** by precedence (`:412-418`): `**` > `* / MOD` > `+ -` >
   `EQ NE GT GE LT LE` > `AND OR XOR`. All are left-associative via `chainl`, including
-  `**`; RS274 does the same. `MOD` is JavaScript `%`, so its sign follows the dividend.
-  `EQ` is exact float equality.
+  `**`. These five levels **match LinuxCNC's documented table exactly** (LinuxCNC
+  G-code overview, "Operators Precedence"). NIST RS274/NGC v3 is reported to use fewer
+  groups, with `AND OR XOR` sharing a level with `+ −` and no relational operators; that
+  source could not be retrieved to verify. Precedence is therefore a **per-dialect**
+  property for Phase 2's dialect profiles, not a single "RS274" rule. `MOD` is
+  JavaScript `%`, so its sign follows the dividend.
+- **`EQ` / `NE` are exact float equality** (`:377-382`). LinuxCNC instead treats values
+  within 1e-6 as equal (`TOLERANCE_EQUAL`), so `[0.1+0.2] EQ 0.3` is 0 upstream and 1 in
+  LinuxCNC. Another per-dialect difference for Phase 2.
 - **Functions**: `ATAN[a]/[b]` (`:349`) plus `ABS ACOS ASIN COS EXP FIX FUP ROUND LN SIN
 SQRT TAN EXISTS` (`:330-347`). `EXISTS` always returns 1 and logs `EXISTS TBD`.
 - **R1, root cause, confirmed.** The function table is registered with `$.each` over an
@@ -166,7 +177,7 @@ hand calculation (N11's test):
    parser: capped at **3000 mm/min**, with rapids at 3000 mm/min (R10, N9).
 2. **Grouping** (`:214-234`). Consecutive fragments join a group while
    `|exitDir₁ + entryDir₂| ≥ 1.95` (`:80-83`), that is, while the direction changes by
-   less than about **25.8°**. Every group boundary is a **full stop** (R10).
+   less than about **25.7°** (for unit vectors, `|a+b| ≥ 1.95` means a turn under 2·acos(0.975) = 25.68°). Every group boundary is a **full stop** (R10).
 3. **Per segment**: `speed = feed/60`. For arcs, the speed is limited so that centripetal
    acceleration stays at or below 0.8 × 200 mm/s², and the remaining acceleration budget is
    tangential (`arcClampedSpeed`, `:68-78`).
@@ -178,8 +189,12 @@ hand calculation (N11's test):
 5. **Clock** (`simulate2`, `:236-270`). The time is sampled at discretisation points: 40
    per line and **`round(|sweep| / 2π × 50)` per arc** (`:57-59`). An arc under
    about 3.6° gets **zero** steps, so it contributes **no time and no bounding box**.
-   Its length also disappears from the planned profile, and the estimate can actually
-   go _down_ when such an arc is added (N7, worse than R11 as listed).
+   The estimate can even go **down** when such an arc is added (N7, worse than R11 as
+   listed). The mechanism: joined to the preceding line in the same group, the arc means
+   the line no longer decelerates to zero at its end. That deceleration now happens inside
+   the arc, which is never sampled, so its time is lost. For example, a 100 mm line alone
+   is 10.060 s; with a 0.57° or 3.0° arc appended it is 10.035 s; with a 4.0° arc (above the
+   boundary) it is 10.759 s.
 6. **Fixed overhead.** Each group ends with 10 samples of +1 ms, which adds **10 ms per
    stop** (`:265-268`, N11).
 7. **Not modelled at all**: dwells (N8), tool changes, spindle spin-up, M0 pauses,
@@ -225,13 +240,13 @@ discretisation points**, not from exact geometry. Two consequences:
 `node tools/bench-legacy.cjs`, Node 22.23.2, Xeon Gold 6148 @ 2.4 GHz, median of 5 runs.
 "Simulate" is `simulateGCode()`, which includes a second parse, tessellation and planning.
 
-| File                        |   Lines |    Parse | Simulate |
-| --------------------------- | ------: | -------: | -------: |
-| tux.ngc                     |   4,297 |    35 ms |   202 ms |
-| test_pycam.ngc              |  33,445 |   165 ms | 1,217 ms |
-| webgcode.ngc                |  45,823 |   254 ms | 1,714 ms |
-| aztec_calendar.ngc          | 223,857 | 1,379 ms | 9,162 ms |
-| a 1,197-line production job |   1,197 |    10 ms |    69 ms |
+| File                                                                                |   Lines |    Parse | Simulate |
+| ----------------------------------------------------------------------------------- | ------: | -------: | -------: |
+| tux.ngc                                                                             |   4,297 |    35 ms |   202 ms |
+| test_pycam.ngc                                                                      |  33,445 |   165 ms | 1,217 ms |
+| webgcode.ngc                                                                        |  45,823 |   254 ms | 1,714 ms |
+| aztec_calendar.ngc                                                                  | 223,857 | 1,379 ms | 9,162 ms |
+| a 1,197-line production job (private corpus; not reproducible from this repository) |   1,197 |    10 ms |    69 ms |
 
 **Implication for Phase 2.** Upstream already _parses_ the 224k-line file in 1.4 s on
 this machine, so the plan's Phase 2 target ("aztec parses ≤ 2 s in Node") is not
