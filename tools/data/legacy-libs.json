@@ -1,0 +1,281 @@
+[
+  {
+    "paths": ["legacy/webapp/libs/ace/**"],
+    "name": "Ace editor",
+    "version": "(src-noconflict build, c. 2014)",
+    "copyright": "2010 Ajax.org B.V.",
+    "spdx": "BSD-3-Clause",
+    "evidence": "File headers (Ajax.org B.V., BSD); ajaxorg/ace LICENSE is BSD-3-Clause"
+  },
+  {
+    "paths": ["legacy/webapp/libs/bootstrap/**"],
+    "name": "Bootstrap (incl. Glyphicons Halflings)",
+    "version": "3.3.0",
+    "copyright": "2011-2014 Twitter, Inc.",
+    "spdx": "MIT",
+    "evidence": "Header: 'Bootstrap v3.3.0 … Licensed under MIT'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/clipper_unminified.js"],
+    "name": "Clipper",
+    "version": "6.1.3a",
+    "copyright": "2010-2014 Angus Johnson",
+    "spdx": "BSL-1.0",
+    "evidence": "Header: 'Boost Software License Ver 1'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/csg.js"],
+    "name": "csg.js",
+    "version": "(2011)",
+    "copyright": "2011 Evan Wallace",
+    "spdx": "MIT",
+    "evidence": "Header: 'under the MIT license'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/deflate/**"],
+    "name": "js-base64",
+    "version": "2.11 (2013-04-08)",
+    "copyright": "2013 Dan Kogai",
+    "spdx": "MIT",
+    "evidence": "Header: 'Licensed under the MIT license' (later versions moved to BSD-3-Clause; the vendored header governs)"
+  },
+  {
+    "paths": ["legacy/webapp/libs/earcut.min.js"],
+    "name": "earcut",
+    "version": "(c. 2014, minified)",
+    "copyright": "Mapbox",
+    "spdx": "ISC",
+    "evidence": "No header; mapbox/earcut LICENSE is ISC"
+  },
+  {
+    "paths": ["legacy/webapp/libs/ember-data.min.js"],
+    "name": "Ember Data",
+    "version": "1.0.0",
+    "copyright": "2011-2014 Tilde, Inc. and contributors",
+    "spdx": "MIT",
+    "evidence": "No header; VERSION 1.0.0 in file; emberjs/data LICENSE is MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/ember.min.js"],
+    "name": "Ember.js",
+    "version": "1.x",
+    "copyright": "2011-2014 Tilde Inc. and contributors",
+    "spdx": "MIT",
+    "evidence": "Header: MIT license"
+  },
+  {
+    "paths": ["legacy/webapp/libs/emberfire.js"],
+    "name": "EmberFire",
+    "version": "0.0.0",
+    "copyright": "Firebase",
+    "spdx": "MIT",
+    "evidence": "Header: 'License: MIT'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/extractedRaphael.js"],
+    "name": "Raphaël (extract, modified by Timo)",
+    "version": "2.1.0",
+    "copyright": "Dmitry Baranovskiy; modifications Timo",
+    "spdx": "MIT",
+    "evidence": "Header: 'Parts of Raphaël 2.1.0 (MIT licence)'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/flatten.js"],
+    "name": "flatten.js",
+    "version": "(2014)",
+    "copyright": "2014 Timo (github.com/timo22345)",
+    "spdx": "MIT",
+    "evidence": "Header: full MIT licence text"
+  },
+  {
+    "paths": ["legacy/webapp/libs/font-awesome-4.2.0/fonts/**"],
+    "name": "Font Awesome fonts",
+    "version": "4.2.0",
+    "copyright": "Dave Gandy",
+    "spdx": "OFL-1.1",
+    "evidence": "Font Awesome 4.x: fonts under SIL OFL 1.1"
+  },
+  {
+    "paths": ["legacy/webapp/libs/font-awesome-4.2.0/css/**"],
+    "name": "Font Awesome CSS",
+    "version": "4.2.0",
+    "copyright": "Dave Gandy",
+    "spdx": "MIT",
+    "evidence": "Font Awesome 4.x: CSS under MIT (header: fontawesome.io/license)"
+  },
+  {
+    "paths": ["legacy/webapp/libs/handlebars-v1.3.0.js"],
+    "name": "Handlebars",
+    "version": "1.3.0",
+    "copyright": "2011 Yehuda Katz",
+    "spdx": "MIT",
+    "evidence": "Header: MIT licence text"
+  },
+  {
+    "paths": [
+      "legacy/webapp/libs/jquery-1.11.1.min.js",
+      "legacy/webapp/libs/jquery-1.11.1.min.map"
+    ],
+    "name": "jQuery",
+    "version": "1.11.1",
+    "copyright": "2005, 2014 jQuery Foundation, Inc.",
+    "spdx": "MIT",
+    "evidence": "Header: jquery.org/license (MIT)"
+  },
+  {
+    "paths": ["legacy/webapp/libs/jquery.flot.min.js"],
+    "name": "Flot",
+    "version": "0.8.2",
+    "copyright": "2007-2014 IOLA and Ole Laursen",
+    "spdx": "MIT",
+    "evidence": "No header; version 0.8.2 in file; flot/flot LICENSE.txt is MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/jquery.flot.resize.js"],
+    "name": "jQuery resize event (Flot plugin)",
+    "version": "(2010)",
+    "copyright": "2010 \"Cowboy\" Ben Alman",
+    "spdx": "MIT",
+    "evidence": "Header: MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/jquery.mousewheel.js"],
+    "name": "jQuery Mousewheel",
+    "version": "(2013)",
+    "copyright": "2013 Brandon Aaron",
+    "spdx": "MIT",
+    "evidence": "Header: MIT License"
+  },
+  {
+    "paths": ["legacy/webapp/libs/jsparse.js"],
+    "name": "jsparse",
+    "version": "(2007)",
+    "copyright": "2007 Chris Double",
+    "spdx": "BSD-2-Clause",
+    "evidence": "Header: full two-clause BSD text. The Phase 1 harness loads it at test time only"
+  },
+  {
+    "paths": ["legacy/webapp/libs/moment.js"],
+    "name": "Moment.js",
+    "version": "2.8.1",
+    "copyright": "Tim Wood, Iskren Chernev, Moment.js contributors",
+    "spdx": "MIT",
+    "evidence": "Header: 'license : MIT'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/opentype.js"],
+    "name": "opentype.js",
+    "version": "0.x (c. 2014)",
+    "copyright": "Frederik De Bleser",
+    "spdx": "MIT",
+    "evidence": "No header; opentypejs/opentype.js LICENSE is MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/pako.min.js"],
+    "name": "pako",
+    "version": "0.2.5",
+    "copyright": "2014 Vitaly Puzrin",
+    "spdx": "MIT",
+    "evidence": "Header 'pako 0.2.5'; the 0.2.5 tag's LICENSE, README and package.json all say MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/piecon.min.js"],
+    "name": "Piecon",
+    "version": "(2012)",
+    "copyright": "2012 Lukas Lipka",
+    "spdx": "MIT",
+    "evidence": "Header says only 'All rights reserved'; the project's README and package.json license it MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/qunit.css", "legacy/webapp/libs/qunit.js"],
+    "name": "QUnit",
+    "version": "(2012)",
+    "copyright": "2012 jQuery Foundation and other contributors",
+    "spdx": "MIT",
+    "evidence": "Header: MIT license"
+  },
+  {
+    "paths": ["legacy/webapp/libs/rbrush.js"],
+    "name": "RBush",
+    "version": "(2013)",
+    "copyright": "2013 Vladimir Agafonkin",
+    "spdx": "MIT",
+    "evidence": "Header names RBush; mourner/rbush LICENSE is MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/require.js", "legacy/webapp/libs/require_text.js"],
+    "name": "RequireJS and text plugin",
+    "version": "2.1.11",
+    "copyright": "2010-2014 The Dojo Foundation",
+    "spdx": "MIT OR BSD-3-Clause",
+    "evidence": "Header: 'Available via the MIT or new BSD license'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/rsvp-latest.js"],
+    "name": "RSVP.js",
+    "version": "3.0.14",
+    "copyright": "2014 Yehuda Katz, Tom Dale, Stefan Penner and contributors",
+    "spdx": "MIT",
+    "evidence": "Header: '@license Licensed under MIT license'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/simplify.js"],
+    "name": "Simplify.js",
+    "version": "(2013)",
+    "copyright": "2013 Vladimir Agafonkin",
+    "spdx": "BSD-2-Clause",
+    "evidence": "Header names Simplify.js; mourner/simplify-js LICENSE is two-clause BSD"
+  },
+  {
+    "paths": ["legacy/webapp/libs/Sortable.min.js"],
+    "name": "Sortable",
+    "version": "1.2.1",
+    "copyright": "RubaXa",
+    "spdx": "MIT",
+    "evidence": "Header: 'Sortable 1.2.1 - MIT'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/svg.js"],
+    "name": "svg.js",
+    "version": "2.3.2",
+    "copyright": "Wout Fierens",
+    "spdx": "MIT",
+    "evidence": "Header: 'svg.js v2.3.2 MIT'"
+  },
+  {
+    "paths": [
+      "legacy/webapp/libs/svg.draggable.js",
+      "legacy/webapp/libs/svg-import.js",
+      "legacy/webapp/libs/svg-parser.js"
+    ],
+    "name": "svg.js plugins (draggable, import, parser)",
+    "version": "(2013-2014)",
+    "copyright": "2013-2014 Wout Fierens",
+    "spdx": "MIT",
+    "evidence": "Headers: 'Licensed under the MIT license'"
+  },
+  {
+    "paths": ["legacy/webapp/libs/svg.memory.js"],
+    "name": "svg.memory.js",
+    "version": "(c. 2014)",
+    "copyright": "Wout Fierens",
+    "spdx": "MIT",
+    "evidence": "No header. An svg.js-family plugin by the same author, all of whose svg.js plugins are MIT; its original repo is no longer reachable. Lowest-confidence entry"
+  },
+  {
+    "paths": ["legacy/webapp/libs/threejs/**"],
+    "name": "three.js r69 and r73dev, with examples (controls, loaders, postprocessing, ThreeCSG, tween.js)",
+    "version": "r69 / r73dev",
+    "copyright": "three.js authors; Chandler Prall (ThreeCSG); tween.js authors",
+    "spdx": "MIT",
+    "evidence": "three.js, ThreeCSG and tween.js LICENSE files are all MIT"
+  },
+  {
+    "paths": ["legacy/webapp/libs/yenc.js"],
+    "name": "yEnc (modified)",
+    "version": "0.9.0 (2013-05-30)",
+    "copyright": "2013 Weston Houghton",
+    "spdx": "LicenseRef-yenc-BSD-unspecified",
+    "evidence": "Matches whoughton/yEnc @1ab6046 (modified). That project declared only \"license\": \"BSD\" and shipped no text. See LICENSES/LicenseRef-yenc-BSD-unspecified.txt"
+  }
+]

@@ -13,7 +13,7 @@
 //   jqDollar:     a jQuery-faithful `$`, for comparison.
 //
 // It loads legacy/webapp/libs/jsparse.js (Chris Double, BSD-style licence per
-// its header) at test time only. See LICENSES/LicenseRef-legacy-vendored.txt.
+// its header) at test time only. See docs/legacy-libraries.md.
 'use strict';
 const fs = require('fs'),
   path = require('path');

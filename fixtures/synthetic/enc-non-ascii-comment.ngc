@@ -1,0 +1,2 @@
+G21 G90 (Fräsen: Ø6 mm — schön)
+G1 X10 F100 ; 深さ

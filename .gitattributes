@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
+# SPDX-License-Identifier: MIT
+#
+# G-code fixtures are test INPUTS and must reach the parser byte-for-byte:
+# line endings (CRLF/CR/LF), byte-order marks and trailing whitespace are
+# exactly what some cases test. Never let git normalise them.
+fixtures/** -text
