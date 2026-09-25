@@ -288,6 +288,71 @@ golden to make a test pass defeats the purpose, so the generator is the only wri
 the automation bot's GitHub no-reply address, and the branch commits' `Signed-off-by:`
 lines keep the contributing role's address. Past history is not rewritten.
 
+## ADR-0014: Phase 2 performance target is parse + interpret
+
+**Status:** Accepted, 2026-09-26 (operator).
+
+**Context.** The original target was "the 224k-line aztec sample parses in ≤ 2 s in
+Node". Upstream already parses it in 1.4 s (ANALYSIS §9), so parse-only is barely a bar.
+
+**Decision.** The target is **parse + interpret ≤ 2 s** for aztec_calendar.ngc on the
+reference machine and pinned Node. After parcel 2a, the lossless tokenizer alone takes
+about 0.84 s (872,824 tokens, 0 diagnostics), which leaves about 1.1 s for the
+interpreter.
+
+## ADR-0015: Primary dialect is Masso G3, firmware v5.13
+
+**Status:** Accepted, 2026-09-26 (operator).
+
+**Decision.** The `masso-g3` dialect profile is built from Masso's published G-code
+reference for **firmware v5.13**, the version in use. Every code on that list is either
+implemented or produces a diagnostic, and none is silently ignored. A `generic` profile
+sits alongside it. Masso differs from the LinuxCNC-style model in ways the core must
+handle per dialect, not globally:
+
+- Fanuc-style `M98`/`M99` subprograms rather than O-word `sub`/`call`;
+- canned cycles G73 and G81–G83 only;
+- G68/G69 coordinate rotation, G38.x probing and G54.1 extended offsets;
+- machine-specific M-codes.
+
+## ADR-0016: Cutter compensation is drawn uncompensated, with a warning
+
+**Status:** Accepted, 2026-09-26 (operator).
+
+**Decision.** In Phase 2, G41/G42 are recognised and tracked in the modal state, and
+the path is drawn **uncompensated**. A warning on the G41/G42 line says so, and names
+the D offset that was not applied. Real offset-path compensation goes on the roadmap.
+CAM output rarely relies on controller compensation, and a clearly-labelled
+uncompensated path is honest where a half-right offset would not be.
+
+## ADR-0017: The lossless line model
+
+**Status:** Accepted, 2026-09-26.
+
+**Decision.** The syntax layer (`packages/core/src/syntax/`) keeps each line's exact
+text and line ending. Tokens hold only spans into that text.
+
+- `write(parse(x)) === x` for **any** input. It is property-tested on arbitrary
+  unicode and on every fixture.
+- Edits splice text into spans (`editLine`), so every untouched byte survives.
+- Spans are UTF-16 code-unit offsets (what JavaScript strings and CodeMirror use).
+- Lines are numbered from **1**. Upstream's golden files use 0-based `lineNo`, and the
+  parity ledger (parcel 2f) maps between them.
+- LF, CRLF and bare CR are all line breaks, and each line records its own. A leading
+  BOM is recorded and stripped. The final line always exists, even when it's empty,
+  which matches editors.
+- The syntax layer is **letter-agnostic**. `A`, `D` and `E` are simply words, and
+  whether they mean anything is for the dialect and the interpreter. A bad character
+  or an unterminated comment is reported and skipped, and the rest of the line is
+  still read. Upstream dropped the whole line (R7).
+- Whitespace outside comments is insignificant, including inside a number, per
+  RS274/NGC. Upstream did the same. `X1 0` reads as `X10`, with an info diagnostic
+  because it's unusual.
+- `X1e3` reads as `X1` then an `E3` word, as in RS274, with a warning that
+  G-code has no exponent notation (R6).
+- Parsing never throws. `editLine` throws only on programming errors (overlapping
+  edits, or an inserted line break).
+
 ---
 
 ## Pending decisions

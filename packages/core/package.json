@@ -27,10 +27,12 @@
   },
   "scripts": {
     "build": "node ../../scripts/build-package.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/node": "^22.20.3",
+    "fast-check": "^4.10.1",
     "typescript": "~6.0.3",
     "vitest": "^5.0.1"
   }
