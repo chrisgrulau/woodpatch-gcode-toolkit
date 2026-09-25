@@ -127,6 +127,12 @@ describe('words and numbers', () => {
     expect(p.diagnostics[0]).toMatchObject({ severity: 'info', code: 'SYNTAX_SPACE_IN_NUMBER' });
   });
 
+  it('notes a space between a sign and its digits', () => {
+    const p = parse('G1 X+ 2');
+    expect(words(p.lines[0]!.tokens)).toEqual(['G1', 'X2']);
+    expect(p.diagnostics[0]).toMatchObject({ code: 'SYNTAX_SPACE_IN_NUMBER' });
+  });
+
   it('warns that X1e3 is X1 then E3, not an exponent (surfaces R6)', () => {
     const p = parse('G1 X1e3');
     expect(words(p.lines[0]!.tokens)).toEqual(['G1', 'X1', 'E3']);
@@ -224,6 +230,20 @@ describe('statements', () => {
   it('reads a Fanuc program number, and Fanuc M98/M99 as ordinary words', () => {
     expect(parse('O1000').lines[0]!.tokens[0]).toMatchObject({ kind: 'oword', keyword: null });
     expect(words(parse('M98 P1000 L2').lines[0]!.tokens)).toEqual(['M98', 'P1000', 'L2']);
+  });
+
+  it('reports an astral character once, by code point', () => {
+    // X has no value, the emoji is unexpected, and a stray "1" follows: 3 findings,
+    // but exactly ONE covers the emoji, and it spans both UTF-16 units.
+    const p = parse('G1 X\u{1F600}1');
+    const atEmoji = p.diagnostics.filter((d) => d.span && d.span.start <= 4 && d.span.end > 4);
+    expect(atEmoji).toHaveLength(1);
+    expect(atEmoji[0]).toMatchObject({
+      code: 'SYNTAX_UNEXPECTED_CHARACTER',
+      span: { start: 4, end: 6 },
+    });
+    expect(atEmoji[0]!.message).toContain('\u{1F600}');
+    expect(p.diagnostics.some((d) => d.span?.start === 5)).toBe(false); // no half-surrogate report
   });
 
   it('reports, and skips, a character that is not G-code', () => {

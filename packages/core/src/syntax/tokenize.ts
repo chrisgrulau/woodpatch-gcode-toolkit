@@ -16,8 +16,9 @@ import type {
  *
  * Contract:
  * - **Never throws**, whatever the input. Every problem is a {@link Diagnostic} with a span.
- * - **Never loses the words around a problem.** A bad character or an unterminated
- *   comment is reported and skipped, and the rest of the line is still tokenized.
+ * - **Never loses the words around a problem.** A bad character is reported and
+ *   skipped, and the rest of the line is still tokenized. An unterminated `(`
+ *   comment runs to the end of the line, and the words before it are kept.
  *   Upstream failed the whole line instead (R7).
  * - Tokens are returned in source order and never overlap.
  * - Letter-agnostic: `E`, `A`, `D` and so on are all words here. Whether a letter
@@ -117,16 +118,17 @@ class LineScanner {
         if ((c | 0x20) === 0x6f /* o */) this.oword();
         else this.word();
       } else {
+        // Step by code point, so an astral character (e.g. an emoji) is one
+        // diagnostic, not two lone surrogate halves.
+        const cp = text.codePointAt(start) ?? c;
+        const width = cp > 0xffff ? 2 : 1;
         this.report(
           'error',
           'SYNTAX_UNEXPECTED_CHARACTER',
-          `Unexpected character "${text[start]}"`,
-          {
-            start,
-            end: start + 1,
-          },
+          `Unexpected character "${String.fromCodePoint(cp)}"`,
+          { start, end: start + width },
         );
-        this.i++;
+        this.i += width;
       }
     }
     return { tokens: this.tokens, diagnostics: this.diagnostics };
@@ -386,8 +388,9 @@ class LineScanner {
     let end = start;
 
     const c0 = text.charCodeAt(j);
-    if (c0 === 0x2b /* + */ || c0 === 0x2d /* - */) {
-      chars += text[j];
+    const signed = c0 === 0x2b /* + */ || c0 === 0x2d; /* - */
+    if (signed) {
+      chars += text.charAt(j);
       j++;
       end = j;
     }
@@ -397,7 +400,8 @@ class LineScanner {
       const c = text.charCodeAt(k);
       const accept = isDigit(c) || (c === 0x2e /* . */ && !sawDot);
       if (!accept) break;
-      if (k !== j && (digits > 0 || sawDot)) spaceInside = true;
+      // A space after a sign counts too: `X+ 2` reads as X2.
+      if (k !== j && (digits > 0 || sawDot || signed)) spaceInside = true;
       if (c === 0x2e) sawDot = true;
       else digits++;
       chars += text[k];
