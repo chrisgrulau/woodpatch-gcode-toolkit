@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 //
 // Upstream behaviours found during the Phase 1 analysis that plan §2.2 does not
-// list (docs/ANALYSIS.md §10, N1–N12). Each test pins upstream's ACTUAL
+// list (docs/ANALYSIS.md §10, N1–N15; N13–N15 found while building the Phase 2
+// expression evaluator). Each test pins upstream's ACTUAL
 // behaviour, so every claim in the analysis is proven in CI rather than asserted.
 // The Phase 2 rewrite fixes most of these. Its own tests assert the fix; these
 // stay as the record of what upstream did.
@@ -113,4 +114,29 @@ test('N12: M, S and T words are parsed and silently ignored', () => {
   const r = run('G21 G90\nM3 S24000\nT2 M6\nG1 X10 F100\nM5\n');
   assert.equal(r.errors.length, 0);
   assert.equal(r.segs.length, 1);
+});
+
+// Expressions need the jQuery-faithful `$` so that the functions are registered at all (R1).
+function expr(src) {
+  const { load: l, jqDollar } = require('./legacy-harness.cjs');
+  const m = l(jqDollar);
+  const errors = [];
+  const segs = m.parser.evaluate(`G21 G90\nG1 X[${src}+1000] F100\n`, null, null, null, errors);
+  return { value: segs[0] ? segs[0].to.x - 1000 : null, errors };
+}
+
+test('N13: trig functions take and return RADIANS (RS274/NGC and LinuxCNC use degrees)', () => {
+  assert.ok(close(expr('SIN[30]').value, Math.sin(30), 1e-9)); // -0.988…, not 0.5
+  assert.ok(close(expr('ATAN[1]/[1]').value, Math.PI / 4, 1e-9)); // 0.785…, not 45
+});
+
+test('N14: MOD takes the sign of the dividend and ROUND rounds halves up (LinuxCNC: positive MOD, half away)', () => {
+  assert.ok(close(expr('[-7 MOD 3]').value, -1)); // LinuxCNC: 2
+  assert.ok(close(expr('ROUND[-2.5]').value, -2)); // LinuxCNC: -3
+});
+
+test('N15: an undefined named parameter silently reads as 0 (LinuxCNC: error)', () => {
+  const r = expr('#<never_set>');
+  assert.ok(close(r.value, 0));
+  assert.equal(r.errors.length, 0);
 });
