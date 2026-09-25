@@ -37,17 +37,18 @@ are kept exactly as upstream left them.
 
 ## Layout
 
-| Path                 | What                                                                          |
-| -------------------- | ----------------------------------------------------------------------------- |
-| `packages/core`      | `@woodpatch/gcode-core`: parser, interpreter, transforms, estimator (no deps) |
-| `packages/viewer`    | `@woodpatch/gcode-viewer`: 3D/2D path view _(placeholder)_                    |
-| `packages/editor`    | `@woodpatch/gcode-editor`: CodeMirror 6 G-code mode _(placeholder)_           |
-| `packages/svelte`    | `@woodpatch/gcode-svelte`: Svelte 5 components _(placeholder)_                |
-| `packages/server`    | `@woodpatch/gcode-server`: HTTP analyse/transform/estimate _(placeholder)_    |
-| `packages/db-schema` | `@woodpatch/gcode-db`: machine/tool/material schema _(placeholder)_           |
-| `tools/`             | Dev tooling, including the headless harness for the legacy parser             |
-| `legacy/`            | Upstream webgcode, parked: not built, linted or shipped                       |
-| `docs/`              | [`DECISIONS.md`](docs/DECISIONS.md): architecture decision records            |
+| Path                 | What                                                                                                                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`      | `@woodpatch/gcode-core`: parser, interpreter, transforms, estimator (no deps)                                                                                                                        |
+| `packages/viewer`    | `@woodpatch/gcode-viewer`: 3D/2D path view _(placeholder)_                                                                                                                                           |
+| `packages/editor`    | `@woodpatch/gcode-editor`: CodeMirror 6 G-code mode _(placeholder)_                                                                                                                                  |
+| `packages/svelte`    | `@woodpatch/gcode-svelte`: Svelte 5 components _(placeholder)_                                                                                                                                       |
+| `packages/server`    | `@woodpatch/gcode-server`: HTTP analyse/transform/estimate _(placeholder)_                                                                                                                           |
+| `packages/db-schema` | `@woodpatch/gcode-db`: machine/tool/material schema _(placeholder)_                                                                                                                                  |
+| `tools/`             | Dev tooling: the legacy-parser harness, golden generator, benchmarks and licence generator                                                                                                           |
+| `legacy/`            | Upstream webgcode, parked: not built, linted or shipped                                                                                                                                              |
+| `fixtures/`          | Test corpus and characterisation goldens ([`fixtures/README.md`](fixtures/README.md))                                                                                                                |
+| `docs/`              | [`DECISIONS.md`](docs/DECISIONS.md) (decision records), [`ANALYSIS.md`](docs/ANALYSIS.md) (how upstream behaves), [`legacy-libraries.md`](docs/legacy-libraries.md) (licences of vendored libraries) |
 
 ## Development
 
