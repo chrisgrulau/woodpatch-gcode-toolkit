@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/r8-unsupported-codes.ngc",
+    "sha256": "02d3ab3a410a8b2efdeb165da9ee3851032a89661b6b2285a4d072ad3877539c",
+    "bytes": 60
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [
+    {
+      "lineNo": 1,
+      "message": "Did not understand G43, skipping",
+      "line": "G43 H1"
+    },
+    {
+      "lineNo": 2,
+      "message": "Did not understand G28, skipping",
+      "line": "G28 Z0"
+    },
+    {
+      "lineNo": 3,
+      "message": "Did not understand G92, skipping",
+      "line": "G92 X0 Y0"
+    },
+    {
+      "lineNo": 4,
+      "message": "Did not understand G53, skipping",
+      "line": "G53 G0 Z0"
+    },
+    {
+      "lineNo": 5,
+      "message": "Did not understand G93, skipping",
+      "line": "G93"
+    }
+  ],
+  "console": [],
+  "summary": {
+    "segments": 1,
+    "byKindAndSpeed": {
+      "line:normal": 1
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        10,
+        0,
+        0
+      ]
+    },
+    "simulatedTotalTimeSeconds": 300.010167,
+    "simulatorErrors": [
+      "{\"lineNo\":1,\"message\":\"Did not understand G43, skipping\",\"line\":\"G43 H1\"}",
+      "{\"lineNo\":2,\"message\":\"Did not understand G28, skipping\",\"line\":\"G28 Z0\"}",
+      "{\"lineNo\":3,\"message\":\"Did not understand G92, skipping\",\"line\":\"G92 X0 Y0\"}",
+      "{\"lineNo\":4,\"message\":\"Did not understand G53, skipping\",\"line\":\"G53 G0 Z0\"}",
+      "{\"lineNo\":5,\"message\":\"Did not understand G93, skipping\",\"line\":\"G93\"}"
+    ]
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 1,
+    "sha256": "db2869eb502e2825accacca58f6a3c2e2aa3a94f7d447049d4f39da5c7c1009e",
+    "segments": [
+      ["L",6,"normal",2,[0,0,0],[10,0,0]]
+    ]
+  }
+}

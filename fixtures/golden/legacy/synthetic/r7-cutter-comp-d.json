@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/r7-cutter-comp-d.ngc",
+    "sha256": "874f523e1b2a8d6a4a272a80d4f65f6e62c1775da566c6c9337da25bfc306be5",
+    "bytes": 30
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [
+    {
+      "lineNo": 1,
+      "message": "did not understand line",
+      "line": "G41 D1"
+    },
+    {
+      "lineNo": 3,
+      "message": "G40 is not supported, skipping",
+      "line": "G40"
+    }
+  ],
+  "console": [],
+  "summary": {
+    "segments": 1,
+    "byKindAndSpeed": {
+      "line:normal": 1
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        5,
+        0,
+        0
+      ]
+    },
+    "simulatedTotalTimeSeconds": 3.018333,
+    "simulatorErrors": [
+      "{\"lineNo\":1,\"message\":\"did not understand line\",\"line\":\"G41 D1\"}",
+      "{\"lineNo\":3,\"message\":\"G40 is not supported, skipping\",\"line\":\"G40\"}"
+    ]
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 1,
+    "sha256": "39d53461fa69868233fe175fcbe2ac36b65da4b0af0fbf13052701ba2be5d6f6",
+    "segments": [
+      ["L",2,"normal",100,[0,0,0],[5,0,0]]
+    ]
+  }
+}

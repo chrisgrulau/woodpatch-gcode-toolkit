@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/r5-g91-work-offset.ngc",
+    "sha256": "4f9c95660256ba6e039eb146dbf4122b6fc5b32d40d3a806f1f4d5294b2cf21d",
+    "bytes": 50
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "ok",
+  "errors": [],
+  "console": [
+    "log: {\"g\":[10],\"l\":[2],\"p\":[1],\"x\":[100]}",
+    "log: {\"g\":[10],\"l\":[2],\"p\":[1],\"x\":[100]}"
+  ],
+  "summary": {
+    "segments": 3,
+    "byKindAndSpeed": {
+      "line:normal": 3
+    },
+    "simulatedBbox": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        303,
+        0,
+        0
+      ]
+    },
+    "simulatedTotalTimeSeconds": 181.818333,
+    "simulatorErrors": []
+  },
+  "jqueryFlavour": "identical",
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 3,
+    "sha256": "2200dfd0e4de4c44e33f0568e9dfd1a11d7fba5455a95bc3211828c9fe84ac49",
+    "segments": [
+      ["L",3,"normal",100,[0,0,0],[101,0,0]],
+      ["L",4,"normal",100,[101,0,0],[202,0,0]],
+      ["L",5,"normal",100,[202,0,0],[303,0,0]]
+    ]
+  }
+}

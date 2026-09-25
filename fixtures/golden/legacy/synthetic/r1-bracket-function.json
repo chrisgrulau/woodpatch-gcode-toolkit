@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "generator": "tools/golden-legacy.cjs",
+  "source": {
+    "file": "fixtures/synthetic/r1-bracket-function.ngc",
+    "sha256": "5c54cc231d7c80b17f6a8fb4546783f6f201fcbd8f0987568289e2b6bdc9c4bf",
+    "bytes": 21
+  },
+  "harness": "$ = worker flavour (what the live simulator ran)",
+  "outcome": "throw",
+  "thrown": "RangeError",
+  "errors": [],
+  "console": [],
+  "jqueryFlavour": {
+    "outcome": "ok",
+    "errors": [],
+    "console": [],
+    "summary": {
+      "segments": 1,
+      "byKindAndSpeed": {
+        "line:normal": 1
+      },
+      "simulatedBbox": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          10,
+          0,
+          0
+        ]
+      },
+      "simulatedTotalTimeSeconds": 6.018333,
+      "simulatorErrors": []
+    },
+    "pathSha256": "37e0913d0d78b2b0c10e530a30cfaff40ec688db15e253720c18ff57399c0d40"
+  },
+  "path": {
+    "format": {
+      "line": [
+        "\"L\"",
+        "lineNo (0-based, as upstream)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]"
+      ],
+      "arc": [
+        "\"A\"",
+        "lineNo (0-based)",
+        "speedTag",
+        "feedRate",
+        "from [x,y,z]",
+        "to [x,y,z]",
+        "plane (first+second coord, e.g. \"xy\", \"zx\")",
+        "centre [x,y,z] (centerInPlane)",
+        "radius",
+        "fromAngle (rad)",
+        "angularDistance (rad; sign = direction)"
+      ],
+      "other": [
+        "\"?\"",
+        "lineNo",
+        "type",
+        "raw JSON of any segment type not listed above"
+      ]
+    },
+    "mode": "full",
+    "count": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "segments": []
+  }
+}

@@ -4,3 +4,4 @@ dist/
 coverage/
 LICENSES/
 docs/legacy-libraries.md
+fixtures/golden/
