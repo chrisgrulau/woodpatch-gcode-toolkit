@@ -87,8 +87,19 @@ describe('operators (LinuxCNC precedence, verified against its docs)', () => {
   it('compares with LinuxCNC tolerance: [0.1+0.2] EQ 0.3 is true (upstream: false)', () => {
     expect(run('[[0.1+0.2] EQ 0.3]')).toBe(1);
     expect(run('[[0.1+0.2] NE 0.3]')).toBe(0);
-    expect(run('[[0.1+0.2] GT 0.3]')).toBe(0);
+    expect(run('[[0.1+0.2] GT 0.3]')).toBe(1); // 0.30000000000000004 > 0.3: GT is plain
     expect(run('[[0.1+0.2] LE 0.3]')).toBe(1);
+  });
+
+  it("pins LinuxCNC's corner: within the tolerance band, EQ, GE, LE and GT are ALL true", () => {
+    // l = r + 5e-7: GT and LT are plain comparisons in LinuxCNC; only EQ/NE/GE/LE use the tolerance.
+    const l = '[0.3 + 0.0000005]';
+    expect(run(`[${l} EQ 0.3]`)).toBe(1);
+    expect(run(`[${l} GE 0.3]`)).toBe(1);
+    expect(run(`[${l} LE 0.3]`)).toBe(1);
+    expect(run(`[${l} GT 0.3]`)).toBe(1);
+    expect(run(`[${l} LT 0.3]`)).toBe(0);
+    expect(run(`[${l} NE 0.3]`)).toBe(0);
   });
 
   it('compares exactly when the dialect says so', () => {

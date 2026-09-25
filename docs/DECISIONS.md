@@ -376,17 +376,23 @@ the core hard-coding them. The rules cover:
 `LINUXCNC_RULES` is the default. **Each of its values was checked against LinuxCNC's
 interpreter source, not recalled:**
 
-| Rule                      | Value                                                         | Source                                                     |
-| ------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------- |
-| Precedence                | `**` · `* / MOD` · `+ -` · `EQ NE GT GE LT LE` · `AND OR XOR` | LinuxCNC G-code overview, "Operators Precedence"           |
-| Equality tolerance        | 1e-6                                                          | `TOLERANCE_EQUAL`, `interp_execute.cc`                     |
-| Angle unit                | degrees                                                       | `sin(x·π/180)`, `asin(x)·180/π`                            |
-| MOD                       | always positive                                               | `interp_execute.cc`: "always calculates a positive answer" |
-| ROUND                     | half away from zero                                           | `(int)(x ± 0.5)`                                           |
-| Undefined named parameter | error                                                         | `interp_namedparams.cc:192`                                |
-| Numbered parameters       | 1–5601                                                        | `RS274NGC_MAX_PARAMETERS = 5602` is an array size          |
-| Unary +/−                 | before any value                                              | `read_real_value`, `interp_read.cc`                        |
-| NaN / ±∞ result           | error                                                         | `read_real_value`                                          |
+| Rule                      | Value                                                         | Source                                                         |
+| ------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------- |
+| Precedence                | `**` · `* / MOD` · `+ -` · `EQ NE GT GE LT LE` · `AND OR XOR` | LinuxCNC G-code overview, "Operators Precedence"               |
+| Equality tolerance        | 1e-6, applied to **EQ, NE, GE and LE only**                   | `TOLERANCE_EQUAL` (`interp_internal.hh:89`); `execute_binary2` |
+| GT and LT                 | **plain** `l > r` and `l < r`, with no tolerance              | `interp_execute.cc:156`, `:175`                                |
+| Angle unit                | degrees                                                       | `sin(x·π/180)`, `asin(x)·180/π`                                |
+| MOD                       | always positive                                               | `interp_execute.cc`: "always calculates a positive answer"     |
+| ROUND                     | half away from zero                                           | `(int)(x ± 0.5)`                                               |
+| Undefined named parameter | error                                                         | `interp_namedparams.cc:192`                                    |
+| Numbered parameters       | 1–5601                                                        | `RS274NGC_MAX_PARAMETERS = 5602` is an array size              |
+| Unary +/−                 | before any value                                              | `read_real_value`, `interp_read.cc`                            |
+| NaN / ±∞ result           | error                                                         | `read_real_value`                                              |
+
+A consequence worth knowing: for two values within the tolerance of each other but not
+equal (say l = r + 5e-7), `EQ`, `GE`, `LE` **and** `GT` are all 1. That looks
+inconsistent, but it's what LinuxCNC does. A tidier rule would not be faithful to the
+controller, so a test pins the corner (reviewer, toolkit #9).
 
 Evaluation never throws. Division by zero, domain errors, undefined or non-integer
 parameters and non-finite results are diagnostics pointing at the responsible

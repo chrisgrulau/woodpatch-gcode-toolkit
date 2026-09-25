@@ -115,12 +115,15 @@ export function evaluate(
         return truth(tol > 0 ? diff < tol : l === r);
       case 'NE':
         return truth(tol > 0 ? diff >= tol : l !== r);
+      // GT and LT are PLAIN comparisons in LinuxCNC (execute_binary2, interp_execute.cc:156/175);
+      // only EQ, NE, GE and LE use the tolerance. So within the tolerance band, EQ and GT
+      // can both be 1. That's odd, but faithful (ADR-0018).
       case 'GT':
-        return truth(l > r && !(tol > 0 && diff < tol));
+        return truth(l > r);
       case 'GE':
         return truth(l >= r || (tol > 0 && diff < tol));
       case 'LT':
-        return truth(l < r && !(tol > 0 && diff < tol));
+        return truth(l < r);
       case 'LE':
         return truth(l <= r || (tol > 0 && diff < tol));
       case 'AND':
