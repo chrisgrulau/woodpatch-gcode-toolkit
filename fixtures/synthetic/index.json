@@ -1,0 +1,197 @@
+[
+  {
+    "file": "r1-bracket-function.ngc",
+    "ref": "R1",
+    "purpose": "Bracket expression with a function (worker $ registers only ATAN)"
+  },
+  {
+    "file": "r1-bracket-unknown.ngc",
+    "ref": "R1",
+    "purpose": "Bracket expression with an unknown word"
+  },
+  {
+    "file": "r1-bracket-incomplete.ngc",
+    "ref": "R1",
+    "purpose": "Malformed bracket expression"
+  },
+  {
+    "file": "r2-r-arc-impossible.ngc",
+    "ref": "R2",
+    "purpose": "R-format arc whose chord (20) exceeds 2R (10)"
+  },
+  {
+    "file": "r2-r-arc-full-circle.ngc",
+    "ref": "R2",
+    "purpose": "R-format full circle (start = end), undefined in RS274"
+  },
+  {
+    "file": "r3-arc-no-axis-words.ngc",
+    "ref": "R3",
+    "purpose": "Full-circle arc with centre offset but no axis words"
+  },
+  {
+    "file": "r4-canned-drill.ngc",
+    "ref": "R4",
+    "purpose": "G81 drill cycle, repeated at a second position"
+  },
+  {
+    "file": "r4-canned-cycles-all.ngc",
+    "ref": "R4",
+    "purpose": "Every canned cycle G81–G89"
+  },
+  {
+    "file": "r5-g91-work-offset.ngc",
+    "ref": "R5",
+    "purpose": "G91 incremental moves under a G10 L2 work offset"
+  },
+  {
+    "file": "r6-exponent.ngc",
+    "ref": "R6",
+    "purpose": "Number with exponent notation"
+  },
+  {
+    "file": "r7-rotary-axes.ngc",
+    "ref": "R7",
+    "purpose": "Rotary axis words on a line with a linear move"
+  },
+  {
+    "file": "r7-cutter-comp-d.ngc",
+    "ref": "R7",
+    "purpose": "Cutter compensation with a D word"
+  },
+  {
+    "file": "r7-unterminated-comment.ngc",
+    "ref": "R7",
+    "purpose": "Unbalanced parenthesis comment"
+  },
+  {
+    "file": "r8-unsupported-codes.ngc",
+    "ref": "R8",
+    "purpose": "Common codes upstream does not support (G43/G28/G92/G53/G93)"
+  },
+  {
+    "file": "r8-after-m30.ngc",
+    "ref": "R8",
+    "purpose": "Moves after program end (M30)"
+  },
+  {
+    "file": "r8-m2-end.ngc",
+    "ref": "R8",
+    "purpose": "Moves after program end (M2)"
+  },
+  {
+    "file": "r8-block-delete.ngc",
+    "ref": "R8",
+    "purpose": "Block delete (/) line"
+  },
+  {
+    "file": "r8-program-number.ngc",
+    "ref": "R8",
+    "purpose": "Program number line"
+  },
+  {
+    "file": "r8-checksum.ngc",
+    "ref": "R8",
+    "purpose": "Line checksums (*nn)"
+  },
+  {
+    "file": "r8-o-word-sub.ngc",
+    "ref": "R8",
+    "purpose": "O-word subroutine definition and call"
+  },
+  {
+    "file": "r8-arc-distance-modes.ngc",
+    "ref": "R8",
+    "purpose": "Absolute arc-centre mode G90.1"
+  },
+  {
+    "file": "r9-sub-10um-moves.ngc",
+    "ref": "R9",
+    "purpose": "A run of 5 µm moves (below upstream's 10 µm threshold)"
+  },
+  {
+    "file": "ok-ij-arcs.ngc",
+    "ref": "§2.3",
+    "purpose": "I/J-format arcs, both directions"
+  },
+  {
+    "file": "ok-r-arcs-minor-major.ngc",
+    "ref": "§2.3",
+    "purpose": "R-format arcs, minor (+R) and major (−R)"
+  },
+  {
+    "file": "ok-helical.ngc",
+    "ref": "§2.3",
+    "purpose": "Helical full circle with Z descent"
+  },
+  {
+    "file": "ok-planes.ngc",
+    "ref": "§2.3",
+    "purpose": "Arcs in G17, G18 (ZX order) and G19 planes"
+  },
+  {
+    "file": "ok-inch.ngc",
+    "ref": "§2.3",
+    "purpose": "Inch program, then switch to mm"
+  },
+  {
+    "file": "ok-incremental.ngc",
+    "ref": "§2.3",
+    "purpose": "G91 incremental square"
+  },
+  {
+    "file": "ok-work-offsets.ngc",
+    "ref": "§2.3",
+    "purpose": "Work offsets G54–G59.3"
+  },
+  {
+    "file": "ok-modal-carry.ngc",
+    "ref": "§2.3",
+    "purpose": "Modal motion carried to lines without a G word"
+  },
+  {
+    "file": "ok-line-numbers-comments.ngc",
+    "ref": "§2.3",
+    "purpose": "N words, paren comments and ; comments"
+  },
+  {
+    "file": "ok-number-formats.ngc",
+    "ref": "§2.3",
+    "purpose": "Trailing-dot and leading-dot decimals, no spaces, lowercase"
+  },
+  {
+    "file": "ok-parameters-expressions.ngc",
+    "ref": "§2.3",
+    "purpose": "Numbered and named parameters, **, MOD, comparison and logical operators"
+  },
+  {
+    "file": "enc-crlf.ngc",
+    "ref": "§6",
+    "purpose": "CRLF line endings"
+  },
+  {
+    "file": "enc-cr.ngc",
+    "ref": "§6",
+    "purpose": "CR-only line endings"
+  },
+  {
+    "file": "enc-bom.ngc",
+    "ref": "§6",
+    "purpose": "UTF-8 byte-order mark before the first line"
+  },
+  {
+    "file": "enc-non-ascii-comment.ngc",
+    "ref": "§6",
+    "purpose": "Non-ASCII characters in comments"
+  },
+  {
+    "file": "enc-no-final-newline.ngc",
+    "ref": "§6",
+    "purpose": "Last line without a newline"
+  },
+  {
+    "file": "enc-long-line.ngc",
+    "ref": "§6",
+    "purpose": "One very long line of repeated X words (repeating a word is itself invalid RS274; this tests length handling)"
+  }
+]

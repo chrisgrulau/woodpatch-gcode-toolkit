@@ -1,0 +1,4 @@
+N10 G21 G90 (set units)
+N20 G1 X10 F100 ; trailing comment
+(whole-line comment)
+N30 G1 Y10

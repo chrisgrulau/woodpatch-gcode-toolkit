@@ -93,14 +93,30 @@ third-party libraries in `webapp/libs/`, and about 70 of them carry no licence h
   `upstream-2025-09-18` tag preserve it regardless.
 - **Licensing records** (`REUSE.toml`): upstream's own files are annotated
   `MIT OR AGPL-3.0-only`, © 2016 Nicolas Raynaud. The vendored libraries in
-  `legacy/webapp/libs/**` are annotated `LicenseRef-legacy-vendored`
-  (`LICENSES/LicenseRef-legacy-vendored.txt`). They are redistributed here as
-  received from upstream, each under its own licence. The identifier records that
-  the per-library licences have not yet been listed, rather than claiming one nobody
-  checked. **Before Phase 1 relies on anything in `libs/` beyond `jsparse.js`**, an
-  audit (about 38 libraries) replaces the LicenseRef with real SPDX identifiers per
-  library. Nothing may be copied from `libs/` into the toolkit's packages without
-  first establishing its licence.
+  `legacy/webapp/libs/**` are redistributed as received, each under its own licence.
+  _Amended 2026-09-25:_ the Phase 0 placeholder `LicenseRef-legacy-vendored` is
+  retired. A per-library audit ([`docs/legacy-libraries.md`](legacy-libraries.md): 38
+  top-level entries grouped into 34 rows) records each library's real SPDX identifier:
+  MIT, BSD-2-Clause, BSD-3-Clause, BSL-1.0, ISC, OFL-1.1, and MIT-or-BSD-3-Clause for
+  RequireJS.
+  - **Four Ace modes were removed**: `mode-r`, `mode-rdoc`, `mode-rhtml` and `mode-tex`.
+    They are RStudio's contributions to Ace, under **AGPL-3.0-only** with no
+    permissive alternative. Nothing loads them; the only mode upstream sets is
+    `javascript`. This is a deliberate, recorded deviation from "as received". The
+    files remain in history and at the upstream tag.
+  - Flot's resize plugin is dual MIT/GPL, and **MIT is elected**. That's recorded as an
+    election in the table.
+  - With those two handled, every file in the tree is under a permissive licence.
+  - One file can't be pinned down: `yenc.js`, whose author declared only "BSD" and
+    shipped no text (`LicenseRef-yenc-BSD-unspecified`).
+
+  The audit table is the single source (`tools/data/legacy-libs.json`). A generator
+  writes both `REUSE.toml` and the doc, and CI fails if either drifts from the table.
+  **The same check reads every covered file's header** and fails on a GPL-family
+  notice that the table doesn't account for. That is how the four Ace modes should
+  have been caught the first time, and it's mutation-tested. Nothing may be copied from
+  `libs/` into the toolkit's packages without first checking that library's entry.
+
 - The one planned consumer is `tools/legacy-harness.cjs`. It loads
   `libs/jsparse.js` (Chris Double, BSD-style licence per its header) at test time
   only.

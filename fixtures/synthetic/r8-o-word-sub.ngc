@@ -1,0 +1,6 @@
+G21 G90
+o100 sub
+G1 X[#1] F100
+o100 endsub
+o100 call [10]
+M2
