@@ -12,8 +12,9 @@
 // can never disagree.
 //
 // It also GUARDS the table against the files themselves (--check and normal runs).
-// Every tracked file under legacy/webapp/libs/ must match a row, and each file's
-// first HEADER_LINES lines are scanned for a GPL-family notice. A notice the row
+// Every tracked file under legacy/webapp/libs/ must match a row, and each file is
+// scanned IN FULL for a GPL-family notice. Many vendored files are bundles of
+// concatenated modules, so a notice needn't sit at the top (reviewer, #4). A notice the row
 // doesn't account for fails: the row's SPDX must name a GPL-family licence, or the
 // row must carry an explicit `election` note (e.g. dual MIT/GPL, MIT elected).
 // This exists because a first audit recorded four AGPL-3.0 Ace modes as BSD. A
@@ -34,7 +35,6 @@ const { libraries: libs, removed } = JSON.parse(
 const check = process.argv.includes('--check');
 
 const LIBS_DIR = 'legacy/webapp/libs/';
-const HEADER_LINES = 60;
 const GPL_NOTICE = /affero|general public licen[cs]e|(^|[^a-z])l?gpl([^a-z]|$)/i;
 const GPL_SPDX = /GPL/;
 
@@ -69,10 +69,10 @@ function guard() {
       problems.push(`${f}: no row in tools/data/legacy-libs.json covers this file`);
       continue;
     }
-    const head = readFileSync(join(root, f), 'utf8').split('\n', HEADER_LINES).join('\n');
-    if (GPL_NOTICE.test(head) && !GPL_SPDX.test(row.spdx) && !row.election) {
+    const text = readFileSync(join(root, f), 'utf8');
+    if (GPL_NOTICE.test(text) && !GPL_SPDX.test(row.spdx) && !row.election) {
       problems.push(
-        `${f}: header has a GPL-family notice, but row "${row.name}" records ${row.spdx} with no election note`,
+        `${f}: contains a GPL-family notice, but row "${row.name}" records ${row.spdx} with no election note`,
       );
     }
   }
@@ -129,8 +129,8 @@ ${libs.length} rows: one row per library, where a library's files may be several
 entries (e.g. RequireJS and its text plugin). Font Awesome takes two rows, because its fonts
 and its CSS are under different licences.
 
-**Guard.** CI reads the first lines of every file covered here, and fails when a GPL-family
-notice isn't accounted for by the row's licence or by an explicit election note.
+**Guard.** CI reads every file covered here in full, and fails when a GPL-family notice
+anywhere in it isn't accounted for by the row's licence or by an explicit election note.
 
 | Library | Version | SPDX | Files | Evidence |
 | ------- | ------- | ---- | ----- | -------- |

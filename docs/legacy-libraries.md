@@ -18,8 +18,8 @@ governs; where it doesn't, the licence comes from the library's own project.
 entries (e.g. RequireJS and its text plugin). Font Awesome takes two rows, because its fonts
 and its CSS are under different licences.
 
-**Guard.** CI reads the first lines of every file covered here, and fails when a GPL-family
-notice isn't accounted for by the row's licence or by an explicit election note.
+**Guard.** CI reads every file covered here in full, and fails when a GPL-family notice
+anywhere in it isn't accounted for by the row's licence or by an explicit election note.
 
 | Library | Version | SPDX | Files | Evidence |
 | ------- | ------- | ---- | ----- | -------- |
