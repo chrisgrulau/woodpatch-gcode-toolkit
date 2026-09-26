@@ -48,6 +48,9 @@ export interface LoadOptions {
   readonly limits?: Partial<InterpretLimits>;
 }
 
+/** A path larger than this (mm) is flagged: 100 m, far beyond any router. */
+const MAX_PLAUSIBLE_SPAN = 100_000;
+
 /** Parse, interpret and tessellate. Synchronous; the worker entry runs exactly this. */
 export function loadProgram(text: string, options: LoadOptions = {}): LoadedProgram {
   const dialect = DIALECTS.find((d) => d.id === options.dialect) ?? GENERIC;
@@ -62,14 +65,24 @@ export function loadProgram(text: string, options: LoadOptions = {}): LoadedProg
     const s = result.steps[buffers.step[v] as number];
     if (s && s.file === undefined) vertexLine[v] = s.line;
   }
+  const bounds = pathBounds(result.steps);
+  const diagnostics: Diagnostic[] = [...program.diagnostics, ...result.diagnostics];
+  const b = bounds.all;
+  if (b && Math.max(b.max.X - b.min.X, b.max.Y - b.min.Y, b.max.Z - b.min.Z) > MAX_PLAUSIBLE_SPAN)
+    diagnostics.push({
+      severity: 'warning',
+      code: 'VIEW_SPAN_IMPLAUSIBLE',
+      message: `The path spans more than ${MAX_PLAUSIBLE_SPAN / 1000} m, larger than any real machine; check the units and coordinates`,
+      line: 0,
+    });
   return {
     count: buffers.count,
     positions: buffers.positions,
     kind: buffers.kind,
     vertexLine,
-    bounds: pathBounds(result.steps),
+    bounds,
     // Syntax findings live on the parsed program, the interpreter's on its result.
-    diagnostics: [...program.diagnostics, ...result.diagnostics],
+    diagnostics,
     coarsened: buffers.coarsened,
     truncated: buffers.truncated,
     dialect: dialect.id,

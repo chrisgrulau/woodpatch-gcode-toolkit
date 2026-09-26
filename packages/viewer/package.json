@@ -4,7 +4,9 @@
   "description": "three.js 3D view of a G-code path. Framework-free class API, worker-backed.",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/worker.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

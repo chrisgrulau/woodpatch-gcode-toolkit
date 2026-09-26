@@ -12,23 +12,48 @@ export interface WorkerLike {
   terminate(): void;
 }
 
+export interface LoaderOptions {
+  /**
+   * The time budget for one load, in ms (plan §4.8: "time budget with cancellation").
+   * Past it the worker is terminated and the load rejects with a TimeoutError. The
+   * core's own limits bound the work, but not the wall-clock on a slow device. aztec
+   * (224k lines) loads in about 1.2 s. Default 30,000; 0 turns the budget off.
+   */
+  readonly timeoutMs?: number;
+}
+
+interface Pending {
+  readonly id: number;
+  readonly resolve: (p: LoadedProgram) => void;
+  readonly reject: (e: Error) => void;
+  /** Removes this load's abort listener and timer. Called exactly once, on settle. */
+  readonly cleanup: () => void;
+}
+
 /**
- * Loads programs in a worker (ADR-0026). One load at a time: a new load, or an abort,
- * TERMINATES the worker running the old one and starts a fresh worker. That's the
- * only way to stop a parse mid-way, and it's what keeps a huge or hostile file from
- * holding the page (plan §4.8: "time budget with cancellation").
+ * Loads programs in a worker (ADR-0026). One load at a time: a new load, an abort, or
+ * the time budget TERMINATES the worker running the old one and starts a fresh worker.
+ * That's the only way to stop a parse mid-way, and it's what keeps a huge or hostile
+ * file from holding the page.
+ *
+ * Each load's abort listener and timer belong to THAT load: they're removed when it
+ * settles, and they only ever cancel their own load (reviewer, toolkit #20). So a host
+ * can reuse one AbortSignal for a component's lifetime, or abort a finished load's
+ * controller, without touching a newer load.
  */
 export class ProgramLoader {
   private worker: WorkerLike | null = null;
   private nextId = 1;
-  private pending: {
-    id: number;
-    resolve: (p: LoadedProgram) => void;
-    reject: (e: Error) => void;
-  } | null = null;
+  private pending: Pending | null = null;
+  private readonly timeoutMs: number;
 
   /** `factory` makes the worker, e.g. `() => new Worker(new URL(...), { type: 'module' })`. */
-  constructor(private readonly factory: () => WorkerLike) {}
+  constructor(
+    private readonly factory: () => WorkerLike,
+    options: LoaderOptions = {},
+  ) {
+    this.timeoutMs = options.timeoutMs ?? 30_000;
+  }
 
   load(text: string, options: LoadOptions = {}, signal?: AbortSignal): Promise<LoadedProgram> {
     this.cancel('superseded by a newer load');
@@ -38,21 +63,35 @@ export class ProgramLoader {
         return;
       }
       const id = this.nextId++;
-      this.pending = { id, resolve, reject };
-      const w = this.ensureWorker();
-      signal?.addEventListener('abort', () => this.cancel('aborted'), { once: true });
-      w.postMessage({ id, text, options });
+      // Cancels only ITS load. Settling removes the listener anyway (cleanup), so the
+      // id check is a second guard, belt and braces, not the primary mechanism.
+      const onAbort = () => {
+        if (this.pending?.id === id) this.cancel('aborted');
+      };
+      const timer =
+        this.timeoutMs > 0
+          ? setTimeout(() => {
+              if (this.pending?.id === id)
+                this.cancel(`timed out after ${this.timeoutMs} ms`, 'TimeoutError');
+            }, this.timeoutMs)
+          : undefined;
+      const cleanup = () => {
+        signal?.removeEventListener('abort', onAbort);
+        if (timer !== undefined) clearTimeout(timer);
+      };
+      this.pending = { id, resolve, reject, cleanup };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      this.ensureWorker().postMessage({ id, text, options });
     });
   }
 
   /** Stops the load in flight, if any (its promise rejects with an AbortError). */
-  cancel(why = 'cancelled'): void {
-    if (!this.pending) return;
-    const p = this.pending;
-    this.pending = null;
+  cancel(why = 'cancelled', name: 'AbortError' | 'TimeoutError' = 'AbortError'): void {
+    const p = this.settle();
+    if (!p) return;
     this.worker?.terminate();
     this.worker = null;
-    p.reject(new DOMException(`Load ${why}`, 'AbortError'));
+    p.reject(new DOMException(`Load ${why}`, name));
   }
 
   dispose(): void {
@@ -61,19 +100,26 @@ export class ProgramLoader {
     this.worker = null;
   }
 
+  /** Takes the pending load, removing its listener and timer. */
+  private settle(): Pending | null {
+    const p = this.pending;
+    this.pending = null;
+    p?.cleanup();
+    return p;
+  }
+
   private ensureWorker(): WorkerLike {
     if (this.worker) return this.worker;
     const w = this.factory();
     w.onmessage = (e) => {
-      const p = this.pending;
-      if (!p || e.data.id !== p.id) return; // a stale reply from a superseded load
-      this.pending = null;
+      if (!this.pending || e.data.id !== this.pending.id) return; // a stale reply
+      const p = this.settle();
+      if (!p) return;
       if (e.data.ok) p.resolve(e.data.program);
       else p.reject(new Error(e.data.error));
     };
     w.onerror = (e) => {
-      const p = this.pending;
-      this.pending = null;
+      const p = this.settle();
       this.worker = null;
       w.terminate();
       p?.reject(new Error(`Worker failed: ${e.message}`));

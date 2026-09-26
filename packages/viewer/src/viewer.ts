@@ -65,6 +65,7 @@ export class GcodeViewer {
   private radius = 100;
   private frame = 0;
   private down: { x: number; y: number } | null = null;
+  private disposed = false;
 
   constructor(
     private readonly container: HTMLElement,
@@ -98,6 +99,7 @@ export class GcodeViewer {
     const el = this.renderer.domElement;
     el.addEventListener('pointerdown', this.onPointerDown);
     el.addEventListener('pointerup', this.onPointerUp);
+    el.addEventListener('pointercancel', this.onPointerCancel);
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(container);
     this.resize();
@@ -105,6 +107,7 @@ export class GcodeViewer {
 
   /** Shows a program, replacing any previous one, and fits the view to it. */
   setProgram(program: LoadedProgram): void {
+    if (this.disposed) return;
     this.program = program;
     this.index = buildLineIndex(program);
     const seg = buildSegments(program, this.palette);
@@ -122,6 +125,7 @@ export class GcodeViewer {
 
   /** Draws one source line's segments highlighted, or clears the highlight (null). */
   highlightLine(line: number | null): void {
+    if (this.disposed) return;
     if (this.highlight) {
       this.world.remove(this.highlight);
       this.highlight.geometry.dispose();
@@ -155,6 +159,7 @@ export class GcodeViewer {
 
   /** Points the camera along a standard direction, framing the whole path. */
   setView(view: ViewName): void {
+    if (this.disposed) return;
     const b = this.program?.bounds.all;
     const size = b ? [b.max.X - b.min.X, b.max.Y - b.min.Y, b.max.Z - b.min.Z] : [100, 100, 10];
     this.radius = Math.max(1, Math.hypot(size[0] ?? 0, size[1] ?? 0, size[2] ?? 0) / 2);
@@ -171,6 +176,7 @@ export class GcodeViewer {
 
   /** Call if the container's size changed without the ResizeObserver seeing it. */
   resize(): void {
+    if (this.disposed) return;
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
     this.renderer.setSize(w, h, false);
@@ -183,21 +189,28 @@ export class GcodeViewer {
     this.requestRender();
   }
 
+  /** Frees everything, including the WebGL context. Later calls are ignored. */
   dispose(): void {
+    if (this.disposed) return;
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
     const el = this.renderer.domElement;
     el.removeEventListener('pointerdown', this.onPointerDown);
     el.removeEventListener('pointerup', this.onPointerUp);
+    el.removeEventListener('pointercancel', this.onPointerCancel);
     this.controls.dispose();
     this.disposePath();
     this.highlight?.geometry.dispose();
-    this.grid?.geometry.dispose();
+    this.grid?.dispose(); // geometry AND material
     this.pathMaterial.dispose();
     this.highlightMaterial.dispose();
+    // dispose() alone keeps the WebGL context alive, and browsers cap live contexts
+    // (~16): a host mounting and unmounting viewers would start losing old ones.
+    this.renderer.forceContextLoss();
     this.renderer.dispose();
     el.remove();
     this.pickListeners.clear();
+    this.disposed = true;
   }
 
   // ── Internals ───────────────────────────────────────────────────────────
@@ -223,7 +236,7 @@ export class GcodeViewer {
   private placeGrid(origin: readonly [number, number, number]): void {
     if (this.grid) {
       this.scene.remove(this.grid);
-      this.grid.geometry.dispose();
+      this.grid.dispose(); // geometry AND material
     }
     const b = this.program?.bounds.all;
     const spec = gridSpec(b ? Math.max(b.max.X - b.min.X, b.max.Y - b.min.Y) : 100);
@@ -235,6 +248,10 @@ export class GcodeViewer {
 
   private readonly onPointerDown = (e: PointerEvent) => {
     this.down = { x: e.clientX, y: e.clientY };
+  };
+
+  private readonly onPointerCancel = () => {
+    this.down = null;
   };
 
   /** A click (not a drag, which orbits) picks the nearest segment under the pointer. */

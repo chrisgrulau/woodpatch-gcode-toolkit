@@ -124,3 +124,14 @@ describe('the worker protocol', () => {
     if (response.ok) expect(transferables(response.program)).toEqual(transfer);
   });
 });
+
+describe('implausible coordinates (reviewer, #20)', () => {
+  it('warns about a span beyond any machine, and keeps scene coordinates finite', () => {
+    const huge = '9' + '0'.repeat(38); // finite in Float64, beyond Float32's range
+    const p = loadProgram(`G21 G90\nG0 X${huge}`);
+    expect(p.diagnostics.map((d) => d.code)).toContain('VIEW_SPAN_IMPLAUSIBLE');
+    const s = buildSegments(p);
+    expect(Array.from(s.positions).every(Number.isFinite)).toBe(true);
+    expect(loadProgram('G0 X1600 Y4000').diagnostics).toEqual([]);
+  });
+});

@@ -41,6 +41,9 @@ export interface SegmentBuffers {
   readonly origin: readonly [number, number, number];
 }
 
+/** Scene coordinates are clamped to ±1e9 mm (1,000 km): finite in Float32, beyond any machine. */
+const MAX_COORD = 1e9;
+
 const rgb = (c: number): [number, number, number] => [
   ((c >> 16) & 0xff) / 255,
   ((c >> 8) & 0xff) / 255,
@@ -64,15 +67,19 @@ export function buildSegments(
     feed: rgb(palette.feed),
   };
   const src = p.positions;
+  // Coordinates finite in Float64 can overflow Float32 after the shift (reviewer,
+  // toolkit #20): clamp so the GPU never sees Infinity. loadProgram warns about such a
+  // span, and no real machine comes near it.
+  const clamp = (v: number) => (v > MAX_COORD ? MAX_COORD : v < -MAX_COORD ? -MAX_COORD : v);
   for (let i = 0; i < n; i++) {
     const a = i * 3;
     const o = i * 6;
-    positions[o] = (src[a] as number) - origin[0];
-    positions[o + 1] = (src[a + 1] as number) - origin[1];
-    positions[o + 2] = (src[a + 2] as number) - origin[2];
-    positions[o + 3] = (src[a + 3] as number) - origin[0];
-    positions[o + 4] = (src[a + 4] as number) - origin[1];
-    positions[o + 5] = (src[a + 5] as number) - origin[2];
+    positions[o] = clamp((src[a] as number) - origin[0]);
+    positions[o + 1] = clamp((src[a + 1] as number) - origin[1]);
+    positions[o + 2] = clamp((src[a + 2] as number) - origin[2]);
+    positions[o + 3] = clamp((src[a + 3] as number) - origin[0]);
+    positions[o + 4] = clamp((src[a + 4] as number) - origin[1]);
+    positions[o + 5] = clamp((src[a + 5] as number) - origin[2]);
     const k = p.kind[i + 1];
     const c =
       k === VERTEX_RAPID

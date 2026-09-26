@@ -1018,9 +1018,15 @@ framework-free class. Svelte wrapping comes later (3e).
   tied to its source line; vertices from a subprogram FILE get line 0, since they belong
   to another file's lines.
 - **Worker:** `@woodpatch/gcode-viewer/worker` runs `loadProgram` and transfers the arrays
-  back, without copying. `ProgramLoader` allows one load at a time. A newer load, or an
-  abort, TERMINATES the busy worker, which is the only way to stop a parse mid-way (plan
-  §4.8, "time budget with cancellation").
+  back, without copying. `ProgramLoader` allows one load at a time. A newer load, an
+  abort, or the **time budget** (`timeoutMs`, default 30 s, 0 = off) TERMINATES the busy
+  worker. That's the only way to stop a parse mid-way (plan §4.8, "time budget with
+  cancellation").
+  - Each load owns its abort listener and timer. They're removed when it settles, and
+    they only cancel their own load. _Corrected in review (toolkit #20): the listener
+    outlived its load, cancelling a newer one and piling up on a shared signal._
+  - `/worker` is declared in `sideEffects`, so a bundler can't drop a bare
+    `import '…/worker'`.
 - **Real line widths:** `LineSegments2` and `LineMaterial` in screen pixels. That fixes R12,
   where upstream's `linewidth: 1.5` was ignored and everything drew at 1 px.
 - **Precision:** positions go to the GPU as Float32 RELATIVE TO THE PATH'S CENTRE. Every
@@ -1036,6 +1042,14 @@ framework-free class. Svelte wrapping comes later (3e).
   and reports its line.
 - **Rendering on demand:** a frame is drawn after a change, not on a loop, so an idle
   view uses no GPU.
+- **Lifecycle:** `dispose()` also calls `forceContextLoss()`, because browsers cap live
+  WebGL contexts at about 16, and it frees the grid's material. Calls after dispose are
+  ignored, and a cancelled gesture clears the pick state.
+- **Implausible coordinates:** a path spanning more than 100 m gets a
+  `VIEW_SPAN_IMPLAUSIBLE` warning. Scene coordinates are clamped to ±1e9 mm, so values
+  finite in Float64 but beyond Float32 never reach the GPU as Infinity.
+- **Diagnostics quote G-code:** the README tells hosts to render them as text, never
+  HTML.
 
 **The operator's Phase 3 decisions (#1171), as they apply here:**
 
