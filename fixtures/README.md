@@ -5,11 +5,12 @@ SPDX-License-Identifier: MIT
 
 # Test fixtures
 
-| Path             | What                                                                                                                                                                                                  |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `upstream/`      | webgcode's own sample programs, copied from `legacy/webapp/samples/`. They carry upstream's licence (MIT OR AGPL-3.0).                                                                                |
-| `synthetic/`     | Small hand-written programs, one per upstream defect (R1–R9), per behaviour upstream gets right, and per encoding edge case. [`synthetic/index.json`](synthetic/index.json) says what each one tests. |
-| `golden/legacy/` | Recorded outputs of upstream's own parser on the files above: characterisation of upstream, bugs included. Regenerated only by `tools/golden-legacy.cjs`.                                             |
+| Path             | What                                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `upstream/`      | webgcode's own sample programs, copied from `legacy/webapp/samples/`. They carry upstream's licence (MIT OR AGPL-3.0).                                                                                  |
+| `synthetic/`     | Small hand-written programs, one per upstream defect (R1–R9), per behaviour upstream gets right, and per encoding edge case. [`synthetic/index.json`](synthetic/index.json) says what each one tests.   |
+| `machine/`       | Programs run on a real controller, byte for byte as run, with the results recorded in the tests that replay them. `masso-dialect-test-v1.nc` is the Masso G3 v5.13 dialect test of 2026-09-26 (T1–T18). |
+| `golden/legacy/` | Recorded outputs of upstream's own parser on the files above: characterisation of upstream, bugs included. Regenerated only by `tools/golden-legacy.cjs`.                                               |
 
 **Rules**
 

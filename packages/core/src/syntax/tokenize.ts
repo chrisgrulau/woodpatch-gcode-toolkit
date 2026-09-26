@@ -115,6 +115,7 @@ class LineScanner {
       else if (c === 0x2a /* * */) this.checksum();
       else if (c === 0x5b /* [ */) this.bracketOutsideWord();
       else if (isLetter(c)) {
+        if ((c | 0x20) === 0x6d /* m */ && this.message()) break;
         if ((c | 0x20) === 0x6f /* o */) this.oword();
         else this.word();
       } else {
@@ -135,6 +136,31 @@ class LineScanner {
   }
 
   // ── Statements ─────────────────────────────────────────────────────────
+
+  /**
+   * A Masso message line: MSG, MSG_S, MSG_W or MSG_SW followed by a space or the end
+   * of the line, at the start of the line or after its N word (Masso docs, "MSG").
+   * The rest of the line is the message. Returns false, consuming nothing, otherwise.
+   */
+  private message(): boolean {
+    for (const t of this.tokens) {
+      if (t.kind !== 'block-delete' && !(t.kind === 'word' && t.letter === 'N')) return false;
+    }
+    const m = /^msg(_sw|_s|_w)?(?=[ \t]|$)/i.exec(this.text.slice(this.i, this.i + 7));
+    if (!m) return false;
+    const start = this.i;
+    const suffix = (m[1] ?? '').toLowerCase();
+    let j = start + m[0].length;
+    while (j < this.text.length && isWs(this.text.charCodeAt(j))) j++;
+    this.tokens.push({
+      kind: 'message',
+      span: { start, end: this.text.length },
+      target: suffix === '_w' ? 'workshop' : suffix === '_sw' ? 'both' : 'screen',
+      text: this.text.slice(j),
+    });
+    this.i = this.text.length;
+    return true;
+  }
 
   private percent(): void {
     const start = this.i;

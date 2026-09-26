@@ -761,6 +761,77 @@ derived view, not a replacement for steps.
 
 ---
 
+## ADR-0023: Dialect profiles, and what the Masso G3 profile is made of
+
+**Status:** Accepted, 2026-09-26. Parcel 2e-1; 2e-2 completes the Masso profile.
+
+**Decision.** A `Dialect` gathers everything that differs between controllers:
+expression rules plus `InterpreterRules`. You pass `interpret(program, { dialect })`,
+and `rules` / `interpreterRules` still override its parts.
+
+- **Three profiles:**
+  - `MASSO_G3`: v5.13, Woodpatch's router, the primary one.
+  - `LINUXCNC`: 2.9, the verified reference.
+  - `GENERIC`: LinuxCNC semantics, accepting every code known here. It's for a program
+    whose controller is unknown.
+- **The default stays LinuxCNC,** so the core's behaviour doesn't depend on which
+  machine Woodpatch owns. Apps choose Masso explicitly.
+
+**New `InterpreterRules`** (each is data, and each has a source):
+
+| Rule           | LinuxCNC 2.9            | Masso G3 v5.13                                                       | Evidence                   |
+| -------------- | ----------------------- | -------------------------------------------------------------------- | -------------------------- |
+| `codes`        | its own list            | the docs' supported G/M lists; G10/G28/G30 held for 2e-2             | docs; T8                   |
+| `parameters`   | yes                     | **no**: `#`, `[ ]` and functions make the line not run               | T10–T14                    |
+| `blockDelete`  | the switch decides      | **ignored**: a `/` line runs                                         | T7                         |
+| `messages`     | `(MSG, …)` comments     | **`MSG` lines** (MSG, MSG_S, MSG_W, MSG_SW)                          | docs                       |
+| `missingFeed`  | error                   | **runs at the machine's rate**; feed `{ mode: 'unspecified' }`       | T1                         |
+| `afterG80`     | axis words are an error | **G0**                                                               | docs; T9                   |
+| `cycleSwitch`  | allowed                 | **warning**: the docs require G80 first; the consequence is untested | docs                       |
+| `arcTolerance` | 0.028 mm, and relative  | **up to 0.5 mm**                                                     | T17; the limit is untested |
+
+These come from parcels 2c-2 and 2c-3 (ADR-0020, ADR-0021):
+
+| Rule          | LinuxCNC 2.9 | Masso G3 v5.13          |
+| ------------- | ------------ | ----------------------- |
+| `dwellUnits`  | seconds      | **milliseconds**        |
+| `cycleRepeat` | L            | **K**, same place       |
+| `g73Retract`  | 0.254 mm     | **1 mm**                |
+| `subprograms` | O-words      | **M98 files**, 5 levels |
+
+**Why a code outside the list refuses the whole line.** Masso's docs say "the entire
+line is ignored", and T8 showed it: `G64 G0 X20` didn't move. That matters for CAM
+posts written for other controllers. `G0 G43 Z15 H1` doesn't move on a Masso, and the
+Masso profile shows exactly that. A preview that quietly ran the Z move would be wrong
+in the dangerous direction.
+
+**MSG lines are syntax, not G-code.** `MSG text` is recognised by the tokenizer at the
+start of a line, or after its N word, for every dialect. Read as words, it would be
+letter soup: `M`, `S`, `G` and the text as garbage. The Masso profile turns it into a
+`message` step. Other profiles warn that it's Masso syntax. LinuxCNC's own
+`(MSG, text)` comments become `message` steps too.
+
+**The evidence is replayed as a test.** The machine-test program is stored byte for
+byte in `fixtures/machine/`. Under `MASSO_G3`, every stop from T1 to T17 lands where the
+DRO read on the machine, to within 0.01 mm (the DRO steps in about 0.005 mm). T18
+retracts to R and ends at the initial Z. Mutating the G80 rule or the `/` rule turns
+the replay red.
+
+**Held for 2e-2,** because Masso's meanings differ from LinuxCNC's:
+
+- G10 L2.1 and L20: on Masso, L20 sets the extended offsets G54.1 P1–P100.
+- G28: machine home, Z first, via an intermediate point in work coordinates.
+- G30: the parking table, Z first.
+- G54.1 itself, M6.1, and M66 waits.
+- The M6 ordering warnings: T before M6, and M5 before M6.
+- The spindle-speed advice (operator, 2026-09-26).
+- A warning band for the arc limit that's not yet measured.
+
+Until then those codes are reported as not interpreted yet, and the line doesn't run:
+a stated gap rather than a guess.
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.

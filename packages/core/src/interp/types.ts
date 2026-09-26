@@ -3,6 +3,7 @@
 
 import type { ExpressionRules } from '../expr/rules.js';
 import type { InterpreterRules } from './rules.js';
+import type { Dialect } from '../dialect/profiles.js';
 import type { Diagnostic } from '../syntax/types.js';
 
 /** The axes the interpreter tracks. XYZ move the tool; ABC are tracked but not simulated. */
@@ -22,7 +23,12 @@ export type Plane = 'XY' | 'ZX' | 'YZ';
 export type Feed =
   | { readonly mode: 'per-minute'; readonly mmPerMinute: number }
   | { readonly mode: 'inverse-time'; readonly perMinute: number }
-  | { readonly mode: 'per-revolution'; readonly mmPerRevolution: number };
+  | { readonly mode: 'per-revolution'; readonly mmPerRevolution: number }
+  /**
+   * No F was ever given, and the controller runs the move anyway at a rate the
+   * operator sets on the machine (Masso). Its time can't be known from the program.
+   */
+  | { readonly mode: 'unspecified' };
 
 /**
  * One thing the program makes the machine do, in execution order.
@@ -95,9 +101,21 @@ type StepKind =
       readonly flood: boolean;
     }
   | { readonly kind: 'pause'; readonly line: number; readonly optional: boolean }
+  /** An operator message (Masso MSG line, LinuxCNC (MSG, …) comment). '' clears it. */
+  | {
+      readonly kind: 'message';
+      readonly line: number;
+      readonly text: string;
+      readonly target: 'screen' | 'workshop' | 'both';
+    }
   | { readonly kind: 'end'; readonly line: number; readonly by: 'M2' | 'M30' | 'M99' | '%' };
 
 export interface InterpretOptions {
+  /**
+   * The controller the program is for (parcel 2e-1, ADR-0023): MASSO_G3, GENERIC or
+   * LINUXCNC. `rules` and `interpreterRules` override its parts. Default: LinuxCNC 2.9.
+   */
+  readonly dialect?: Dialect;
   /** Expression rules (ADR-0018). Default: LINUXCNC_RULES. */
   readonly rules?: ExpressionRules;
   /** Controller-dependent interpreter behaviour (ADR-0019). Default: LINUXCNC_INTERPRETER_RULES. */
