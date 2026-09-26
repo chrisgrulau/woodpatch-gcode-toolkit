@@ -229,7 +229,7 @@ a frozen module namespace, and the legacy harness fails when jsparse tries to se
 
 ## ADR-0011: The programme plan is not kept in this repository
 
-**Status:** Accepted, 2026-09-24.
+**Status:** Accepted, 2026-09-24; ratified by the operator, 2026-09-26.
 
 **Context.** The original plan asked for a copy of itself in the repo as
 `docs/PLAN.md`. That plan is an internal document: it describes internal
@@ -996,6 +996,68 @@ them no length.
 | `parse(write(parse(x))) == parse(x)` on the whole corpus                           | `syntax/program.test.ts`, on every fixture plus a fast-check property                                                                                                                                                                             |
 | aztec parses in ≤ 2 s in Node                                                      | Parse + interpret takes about 0.8 s locally (target 2 s). CI enforces it as a ratio, ≤ 1.2× upstream's parse (ADR-0014).                                                                                                                          |
 | 100% of the Masso reference's codes implemented or reported, none silently ignored | A test runs every code in the Masso profile's list: none is refused as unknown, and each code not yet modelled (G68/G69, G38.x, G32, G96/G97, G200) says so                                                                                       |
+
+---
+
+## ADR-0026: The 3D viewer: framework-free, worker-backed, three.js as a peer
+
+**Status:** Accepted, 2026-09-26. Parcel 3a.
+
+**Decision.** `@woodpatch/gcode-viewer` draws a program in 3D with three.js, as a
+framework-free class. Svelte wrapping comes later (3e).
+
+- **three.js is a peer dependency** (`>=0.186.0 <0.187.0`). The host provides it, and
+  the build keeps every dependency and peer EXTERNAL, so a page never ships two copies
+  (plan §4.1). `scripts/build-package.mjs` now takes `woodpatch.entries` and externalises
+  `dependencies` and `peerDependencies`.
+- **Version and cooldown:** 0.186.0 was chosen under the 7-day release cooldown
+  (0.186.1 was a day old). three.js makes breaking changes between 0.x minors, so the peer
+  range is a single minor, widened as each new one is tested.
+- **The pipeline is one function, `loadProgram(text, { dialect })`:** parse → interpret →
+  tessellate → bounds. It returns only typed arrays and cloneable data. Each vertex is
+  tied to its source line; vertices from a subprogram FILE get line 0, since they belong
+  to another file's lines.
+- **Worker:** `@woodpatch/gcode-viewer/worker` runs `loadProgram` and transfers the arrays
+  back, without copying. `ProgramLoader` allows one load at a time. A newer load, or an
+  abort, TERMINATES the busy worker, which is the only way to stop a parse mid-way (plan
+  §4.8, "time budget with cancellation").
+- **Real line widths:** `LineSegments2` and `LineMaterial` in screen pixels. That fixes R12,
+  where upstream's `linewidth: 1.5` was ignored and everything drew at 1 px.
+- **Precision:** positions go to the GPU as Float32 RELATIVE TO THE PATH'S CENTRE. Every
+  path includes the move from home, so a 4 m bed resolves about 0.12 µm, well below what
+  can be seen. A test holds every vertex within 0.25 µm.
+- **Upstream's colour language is kept, and is configurable (`palette`):** white cuts,
+  red rapids, a yellow highlight, an orange grid.
+- **Grid and view:** the grid sits on the machine's Z0 plane, sized in 1/2/5 × 10ⁿ mm
+  cells. Z is up; the views are iso, top, front and right, fitted to the path.
+- **Line ↔ path:** `buildLineIndex` maps each line to its RUNS of segments (a subroutine
+  called twice owns two runs) and each segment back to its line. `highlightLine(n)` draws
+  them on top. A click that isn't a drag picks the nearest segment within `pickRadius` px
+  and reports its line.
+- **Rendering on demand:** a frame is drawn after a change, not on a loop, so an idle
+  view uses no GPU.
+
+**The operator's Phase 3 decisions (#1171), as they apply here:**
+
+- WebGL2 only; WebGPU is deferred.
+- The 60 fps target is measured on a real machine. CI gates proxies instead.
+- The first proxies, on aztec (226k vertices):
+  - GPU buffers: about 12 ms;
+  - the line index: about 44 ms;
+  - one draw call for the whole path (plus the highlight and the grid).
+- Loading takes about 1.2 s, in the worker.
+
+**Testing.** The pure parts run in Node:
+
+- `loadProgram`: all five reference files, dialects, diagnostics;
+- the geometry: centring, colours, Float32 precision;
+- the line index: repeated runs;
+- the worker protocol;
+- `ProgramLoader`: a superseding load terminates the worker; stale replies, aborts, and a
+  worker failure then recovery.
+
+The WebGL class itself is exercised in a real browser by the playground's Playwright
+tests (parcels 3c and 3f), on the CI runner's preinstalled Chrome.
 
 ---
 
