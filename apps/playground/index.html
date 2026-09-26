@@ -16,6 +16,8 @@ SPDX-License-Identifier: MIT
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'"
     />
+    <!-- An empty inline favicon: without one the browser's automatic request 404s. -->
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>

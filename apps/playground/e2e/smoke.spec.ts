@@ -41,14 +41,21 @@ test('the Masso sample shows diagnostics, and one moves the editor to its line',
   await expect(status(page)).toContainText('Read in', { timeout: 30_000 });
   await page.selectOption('#dialect', 'masso-g3-5.13');
   await page.selectOption('#sample', 'masso-dialect-test-v1.nc');
-  await expect(page.locator('#diagnostics li').first()).toBeVisible({ timeout: 30_000 });
+  // Wait for the Masso reading of the Masso program: its T1 (a feed move before any F)
+  // is only a warning under Masso. Earlier reads' lists may still be on screen before.
+  await expect(page.locator('.cm-content')).toContainText('WOODPATCH MASSO DIALECT TEST', {
+    timeout: 30_000,
+  });
+  await expect(page.locator('#diagnostics')).toContainText('SEMANTIC_FEED_UNSPECIFIED', {
+    timeout: 30_000,
+  });
   const first = page.locator('#diagnostics li button:not([disabled])').first();
   const label = (await first.textContent()) ?? '';
   const line = Number(label.replace(/\D+/g, ''));
   expect(line).toBeGreaterThan(0);
   await first.click();
   // The editor's active line is the diagnostic's line.
-  const active = page.locator('.cm-activeLineGutter');
+  const active = page.locator('.cm-lineNumbers .cm-activeLineGutter');
   await expect(active).toHaveText(String(line));
   expect(problems).toEqual([]);
 });
