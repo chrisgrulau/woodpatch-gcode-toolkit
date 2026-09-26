@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
 // SPDX-License-Identifier: MIT
 //
-// The PARITY LEDGER (parcel 2f, ADR-0025): every line of every fixture where the core's
+// The parity ledger (parcel 2f, ADR-0025): every line of every fixture where the core's
 // path differs from upstream's, and why. Where upstream was right the core must match
 // it; where upstream was wrong the core must differ, and the ledger must say which
 // defect (R1-R14, N1-N15 in docs/ANALYSIS.md) or decision explains it. A difference
@@ -26,7 +26,7 @@ const { characterise, canonicalPath, sha } = require('./golden-legacy.cjs');
 const { workerDollar } = require('./legacy-harness.cjs');
 const { parse, interpret, LINUXCNC } = await import(join(root, 'packages/core/dist/index.js'));
 
-const LEDGER = join(root, 'tools/data/parity-ledger.json');
+const RULES_PATH = join(root, 'tools/data/parity-ledger.json');
 const REPORT = join(root, 'docs/PARITY.md');
 const CORPORA = ['upstream', 'synthetic'];
 const mode = process.argv.includes('--check')
@@ -134,7 +134,7 @@ function compare(dir, name) {
 }
 
 // ── Rules ────────────────────────────────────────────────────────────────
-const ledger = JSON.parse(readFileSync(LEDGER, 'utf8'));
+const ledger = JSON.parse(readFileSync(RULES_PATH, 'utf8'));
 const glob = (pattern, s) =>
   new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(s);
 const matches = (rule, d) =>
