@@ -320,6 +320,28 @@ A real regression fails every attempt; noise rarely does. Every attempt is print
 lasting cure is fewer allocations: the path model (2d) avoids per-segment objects, and a
 leaner token representation is the next lever if the budget stays tight.
 
+_Ratcheted 2026-09-26 (reviewer, toolkit #11)._ The fast path never ran in 2c-2's first
+cut: the G letter was missing from its table. The fix (203eab0) roughly halved the core's
+time. The measurements:
+
+| Where           | Before the fix | After       |
+| --------------- | -------------- | ----------- |
+| Locally (aztec) | about 1.6 s    | about 0.8 s |
+| Locally (ratio) | —              | about 0.65× |
+| CI (ratio)      | 1.38×          | 0.74–1.04×  |
+
+The CI range is for near-identical code on different runners: upstream's own parse
+alone ranged from 486 to 943 ms. So the ratio is less machine-independent than assumed
+above.
+
+The limit is now **1.2×**. That protects most of the gain and catches a slide back
+towards the old 1.4×, without failing on runner variation. The cost is that on a
+slow-ratio runner, a regression of up to about 15% can still pass.
+
+A pass that needed a retry now prints a `::warning::` annotation, so creep shows on the
+PR's checks and not only in a log nobody reads. The 2 s absolute target on the reference
+machine is unchanged, and now has about 60% headroom.
+
 ## ADR-0015: Primary dialect is Masso G3, firmware v5.13
 
 **Status:** Accepted, 2026-09-26 (operator).
@@ -502,6 +524,9 @@ headroom, so it will build its path model without per-segment objects.
 
 **Status:** Accepted, 2026-09-26.
 
+**Reference version: LinuxCNC 2.9.x** (stable, v2.9.10), per the reviewer on toolkit #11.
+All of this ADR holds on the 2.9 branch and on master, except the peck distances below.
+
 **Decision.** G73, G81, G82 and G83 (XY plane) are interpreted as LinuxCNC's
 interpreter does them, from `interp_cycles.cc` (`convert_cycle_xy`, `CYCLE_MACRO`,
 `convert_cycle_g73/g81/g82/g83`) rather than its prose docs. The docs say G73 ends at R;
@@ -541,11 +566,32 @@ checked move for move against its documentation.
 The machine test confirmed Masso's G83 retracts to R between pecks and ends at the
 initial Z under G98, as modelled.
 
+**LinuxCNC 2.10 differs on the peck distances.** In 2.9, `G83_RAPID_DELTA` (0.010 in,
+0.254 mm under G21) is used for both G73 and G83. On master (2.10; commits c9759fc1b1
+and 6dd181d7be):
+
+- the defaults become 1 mm on a metric machine and 0.050 in on an inch one
+  (`rs274ngc_pre.cc`);
+- they can be set by INI `G73_PECK_CLEARANCE` / `G83_PECK_CLEARANCE`;
+- they can be set per block by a **D word**.
+
+A 2.10 profile must set `g73Retract`/`g83Clearance` itself rather than inherit 0.254.
+It also needs D read as the peck distance on G73/G83; today D there is an unused word.
+
 ---
 
 ## ADR-0021: Subprograms and program flow
 
 **Status:** Accepted, 2026-09-26.
+
+**Reference version: LinuxCNC 2.9.x.** The 2.9 branch was checked against master.
+
+- They agree on everything this ADR relies on: control-flow labels scoped per sub
+  (`sub#label` in `read_o`), #1–#30 handling, and named-parameter scoping.
+- The call limit is the same 9. 2.9 checks `call_level >= 10` after incrementing, and
+  master checks `call_level + 1 >= 10` before.
+- Master adds checks this doesn't depend on: stricter nested-definition errors inside a
+  called file, and no forward-seek in a called file.
 
 **Decision.** LinuxCNC's O-word flow and Masso's M98/M99 subprogram files are both
 interpreted. They follow LinuxCNC's `interp_o_word.cc` and `interp_read.cc` where the

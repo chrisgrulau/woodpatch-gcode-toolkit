@@ -53,13 +53,17 @@ export interface SubprogramRules {
   readonly maxCallDepth: number;
 }
 
-/** LinuxCNC's behaviour, verified against its source (reviewer, toolkit #10). */
+/**
+ * LinuxCNC 2.9 (stable) behaviour, verified against its source (reviewer, toolkit #10
+ * and #11). Every rule here is the same on master unless ADR-0020 says otherwise.
+ */
 export const LINUXCNC_INTERPRETER_RULES: InterpreterRules = Object.freeze({
   feedUnits: 'at-feed-step',
   dwellUnits: 'seconds',
   cycleRepeat: Object.freeze({ letter: 'L', stepInIncremental: true }),
-  // interp_cycles.cc: parameter_g73_peck_clearance / parameter_g83_peck_clearance,
-  // documented as 0.010 in / 0.254 mm.
+  // LinuxCNC 2.9 interp_cycles.cc: G83_RAPID_DELTA (0.010 in, x25.4 under G21) for
+  // both G73 and G83. 2.10 changes this (ADR-0020): see the note there before adding
+  // a 2.10 profile.
   g73Retract: 0.254,
   g83Clearance: 0.254,
   subprograms: Object.freeze({ oWord: true, m98: 'in-file', maxCallDepth: 9 }),

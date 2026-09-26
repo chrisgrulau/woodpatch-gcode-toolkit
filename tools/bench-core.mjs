@@ -52,7 +52,8 @@ for (const f of files) {
   );
 }
 if (ci) {
-  const BUDGET_RATIO = 2000 / 1379;
+  // Ratcheted from 1.45x (2000 / 1379 ms) after the fast-path fix (ADR-0014).
+  const BUDGET_RATIO = 1.2;
   const ATTEMPTS = 3;
   const { createRequire } = await import('node:module');
   const { load, workerDollar } = createRequire(import.meta.url)('./legacy-harness.cjs');
@@ -88,11 +89,20 @@ if (ci) {
     return { core, legacy, ratio: core / legacy };
   };
   let passed = false;
+  let attempts = 0;
   for (let a = 1; a <= ATTEMPTS && !passed; a++) {
+    attempts = a;
     const { core, legacy, ratio } = measure();
     passed = ratio <= BUDGET_RATIO;
     console.log(
       `budget attempt ${a}/${ATTEMPTS}: core ${core.toFixed(0)} ms / upstream parse ${legacy.toFixed(0)} ms = ${ratio.toFixed(2)}x (limit ${BUDGET_RATIO.toFixed(2)}x) ${passed ? 'PASS' : 'over'}`,
+    );
+  }
+  // A pass that needed retries is how creep first shows. Say so on the PR's checks
+  // (reviewer, toolkit #11): nobody reads a green log.
+  if (passed && attempts > 1) {
+    console.log(
+      `::warning::performance budget passed only on attempt ${attempts}/${ATTEMPTS}: the core may be creeping towards its limit (ADR-0014)`,
     );
   }
   if (!passed) {
