@@ -3,9 +3,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  G_CODES,
   GENERIC,
   LINUXCNC,
   MASSO_G3,
+  M_CODES,
   interpret,
   parse,
   type InterpretOptions,
@@ -22,6 +24,7 @@ const xs = (src: string, options?: InterpretOptions) =>
   moves(run(src, options).steps).map((s) => s.to.X);
 const codes = (src: string, options?: InterpretOptions) =>
   run(src, options).diagnostics.map((d) => d.code);
+const codesOf = codes;
 
 describe('the Masso machine test, replayed (2026-09-26, v5.13)', () => {
   // The program Chris ran on the router, byte for byte, and the work DRO readings he
@@ -275,5 +278,26 @@ describe('Masso positions and events (parcel 2e-2)', () => {
     const r = run('F100\nG0 X10\nG2 X-11 Y0 I-10 J0', masso);
     expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_ARC_RADIUS_MISMATCH_UNTESTED']);
     expect(r.steps.at(-1)).toMatchObject({ kind: 'arc', endRadius: 11 });
+  });
+});
+
+describe('Phase 2 acceptance: no Masso code is silently ignored', () => {
+  it('knows every code in the Masso reference: each is interpreted or reported', () => {
+    const codes = MASSO_G3.interpreter.codes;
+    expect(codes).not.toBeNull();
+    for (const g of codes?.g ?? []) expect(G_CODES.has(g), `G${g}`).toBe(true);
+    for (const m of codes?.m ?? []) expect(M_CODES.has(m), `M${m}`).toBe(true);
+    // None is refused as unknown; the ones not modelled say so.
+    for (const [letter, list, table] of [
+      ['G', codes?.g ?? [], G_CODES],
+      ['M', codes?.m ?? [], M_CODES],
+    ] as const) {
+      for (const c of list) {
+        const found = codesOf(`${letter}${c}`, masso);
+        expect(found, `${letter}${c}`).not.toContain('SEMANTIC_UNSUPPORTED_CODE');
+        if (table.get(c)?.later)
+          expect(found, `${letter}${c}`).toContain('SEMANTIC_NOT_YET_SUPPORTED');
+      }
+    }
   });
 });

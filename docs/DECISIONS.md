@@ -940,6 +940,65 @@ preview draws those lines, as if the input condition wasn't met, and warns.
 
 ---
 
+## ADR-0025: The parity ledger, and Phase 2's acceptance evidence
+
+**Status:** Accepted, 2026-09-26. Parcel 2f.
+
+**Decision.** `tools/parity.mjs` compares the core's path with upstream's on every
+fixture, line by line. Every difference must be explained by a rule in
+`tools/data/parity-ledger.json`, which names the upstream defect (ANALYSIS R/N) or the
+decision behind it. CI runs `--check`, which fails in three cases:
+
+- a difference no rule explains;
+- a rule that no longer explains anything;
+- `docs/PARITY.md` (generated) out of date.
+
+**How it compares:**
+
+- **Upstream's full path is regenerated** with the golden harness, not read from the
+  golden. Large goldens store only a sample. Each regeneration is checked against the
+  golden's SHA-256, so the comparison covers all 307,313 upstream segments.
+- **The core** runs the LinuxCNC 2.9 dialect.
+- **Per line,** each move is compared on:
+  - its kind (rapid, feed or arc);
+  - its end point, to 0.1 µm;
+  - its feed, including the feed mode;
+  - for arcs, the centre and the signed sweep, to 1 µrad.
+- **Each difference is tagged** from what the two sides said on that line:
+  `upstream-threw`, `zero-length`, `core:<diagnostic codes>`, `upstream-error` or
+  `other`.
+- **Rules match on a file glob and a tag.** They're tried in order, and the first match
+  wins.
+
+**Result:**
+
+- **97 of 307,388 lines with motion differ, and all 97 are explained.**
+- **The four upstream sample programs** differ ONLY where upstream dropped a
+  zero-length move (R9): 59 lines across 307k.
+- **Every other difference is in a fixture written to show a defect** (R1–R9, N3, N4,
+  N6, N10, N12), and it's exactly the defect that fixture was written for.
+- **Every arc upstream drew correctly matches in centre and direction,** as well as end
+  point. That includes aztec's 235 arcs.
+- **Mutation check:** reversing the core's arc direction leaves 249 differences
+  unexplained, and the check fails.
+
+**One deviation from the ANALYSIS fix table (R9: "keep every move; flag degenerate
+ones").** Moves are kept, but a zero-length move is not flagged. A move to where the
+tool already is, such as `G0 X0 Y0` at the start, is routine in CAM output: 54 of them
+in one sample file. A diagnostic on each would bury real ones. The estimator gives
+them no length.
+
+**Phase 2 acceptance (plan §5), with the evidence for each:**
+
+| Criterion                                                                          | Evidence                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every §2.2 defect covered by failing-then-passing tests                            | R1–R9: upstream's behaviour is pinned in `tools/legacy-findings.test.cjs` and the goldens; the core's is in its tests; this ledger ties each to the line where it shows. R10–R14 are the estimator (Phase 5), display (Phase 3), tests and stack. |
+| `parse(write(parse(x))) == parse(x)` on the whole corpus                           | `syntax/program.test.ts`, on every fixture plus a fast-check property                                                                                                                                                                             |
+| aztec parses in ≤ 2 s in Node                                                      | Parse + interpret takes about 0.8 s locally (target 2 s). CI enforces it as a ratio, ≤ 1.2× upstream's parse (ADR-0014).                                                                                                                          |
+| 100% of the Masso reference's codes implemented or reported, none silently ignored | A test runs every code in the Masso profile's list: none is refused as unknown, and each code not yet modelled (G68/G69, G38.x, G32, G96/G97, G200) says so                                                                                       |
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.
