@@ -22,7 +22,7 @@ export const pathLineField = StateField.define<DecorationSet>({
       if (!e.is(setPathLine)) continue;
       const n = e.value;
       next =
-        n && n >= 1 && n <= tr.state.doc.lines
+        n && Number.isInteger(n) && n >= 1 && n <= tr.state.doc.lines
           ? Decoration.set([pathLineMark.range(tr.state.doc.line(n).from)])
           : Decoration.none;
     }
@@ -48,7 +48,7 @@ export function onCursorLine(listener: (line: number) => void) {
 
 /** Marks line `n` as the one the viewer picked (null clears it) and scrolls to it. */
 export function showPathLine(view: EditorView, n: number | null): void {
-  const valid = n !== null && n >= 1 && n <= view.state.doc.lines;
+  const valid = n !== null && Number.isInteger(n) && n >= 1 && n <= view.state.doc.lines;
   view.dispatch({
     effects: [
       setPathLine.of(valid ? n : null),

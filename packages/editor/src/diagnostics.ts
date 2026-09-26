@@ -27,15 +27,19 @@ export function toLintDiagnostics(
       skipped++;
       continue;
     }
-    const n = Math.min(Math.max(d.line, 1), doc.lines);
+    // A public function: a NaN line or a reversed span must not throw or invert.
+    const ln = Number.isFinite(d.line) ? Math.trunc(d.line) : 1;
+    const n = Math.min(Math.max(ln, 1), doc.lines);
     const line = doc.line(n);
     const shift = n === 1 ? bom : 0;
     const len = line.length - shift;
     let from = line.from + shift;
     let to = line.to;
-    if (d.span && d.line >= 1) {
-      from = line.from + shift + Math.min(Math.max(d.span.start, 0), len);
-      to = line.from + shift + Math.min(Math.max(d.span.end, d.span.start), len);
+    if (d.span && ln >= 1) {
+      const start = Math.min(Math.max(d.span.start, 0), len);
+      const end = Math.min(Math.max(d.span.end, start), len);
+      from = line.from + shift + start;
+      to = line.from + shift + end;
     }
     out.push({ from, to, severity: d.severity, message: d.message, source: d.code });
   }

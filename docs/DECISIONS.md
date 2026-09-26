@@ -1090,27 +1090,43 @@ setup (keys, history, search).
   Masso `MSG` lines, `/`, `%` and checksums each have their own style.
 - **Only the visible lines are decorated** (a view plugin over `visibleRanges`), so a
   224k-line file costs what the screen shows.
+  - Each line is styled ONCE, even when CodeMirror splits a long line into several
+    visible ranges. Styling it twice added ranges out of order, `RangeSetBuilder`
+    threw, and CodeMirror disabled the plugin for the session. _Corrected in review,
+    toolkit #21._
+  - Only the first 2,000 characters of a line are styled (`MAX_STYLED_CHARS`), and a
+    tokenizer failure styles nothing rather than throwing. A pathological line can't
+    stall typing, or take out highlighting and folding. The core's own recursion and
+    super-linear rescans on such lines are filed as #1506.
+  - Line 1's byte-order mark is skipped, as the core skips it.
 - **Diagnostics:** `showDiagnostics(view, diagnostics)` maps the core's line and span to
   document offsets for the lint gutter:
   - the span when there is one, the whole line otherwise;
   - line 0 (whole-program notes) goes on line 1;
   - offsets are shifted past a byte-order mark on line 1, which the core's line text
     doesn't include;
-  - spans are clamped to the line.
+  - spans are clamped to the line, and a reversed span or a non-finite line is tolerated,
+    not thrown on (it's a public function).
     Diagnostics from a subprogram FILE belong to another file's lines. They're counted
     (returned), not shown.
 - **Folding:** O-word blocks (`sub`, `if`, `while`, `do` → `while`, `repeat`) fold to the
   line before their closer, so the closer stays visible.
-  - Labels are normalised as the core does (`o0100` = `o100`, `<My Sub>` = `<mysub>`).
-  - Same-label blocks nest.
-  - The search looks at most 20,000 lines ahead, and only tokenizes lines that could hold
-    an O-word, so a fold never costs a scan of a huge file.
-  - It deliberately doesn't use the interpreter's flow index: folding runs per visible
-    line, and re-indexing the whole document there would be too slow.
+  - Blocks are paired from a ONE-PASS index of the document, cached per document version
+    (a `WeakMap` on the immutable `Text`).
+  - Pairing uses a stack per label: a `while` closes an open `do` with its label, and
+    otherwise opens a while loop. Same-label blocks nest.
+  - Labels are normalised by the core's own `normaliseLabel`, now exported, so the two
+    can't drift.
+  - Only lines that could hold an O-word are tokenized, and only their first 1,000
+    characters.
+  - _Corrected in review (toolkit #21):_ the first cut scanned up to 20k lines ahead per
+    visible line and per update, about 2.8 s with 150 unclosed openers on screen. The
+    index answers each line from a map.
 - **Line ↔ path** (upstream's UX, kept per plan §2.3):
   - `onCursorLine` reports the cursor's line when it changes.
   - `showPathLine(view, n)` marks the viewer's picked line and scrolls to it WITHOUT
-    moving the cursor, so a viewer click can't bounce back as a cursor move.
+    moving the cursor, so a viewer click can't bounce back as a cursor move. Only whole
+    line numbers are marked.
   - The mark follows its line through edits above it.
 - **Build:** the same externalising build as the viewer (ADR-0026), so the bundle is
   9.8 KB and imports CodeMirror and the core. The peers were chosen under the 7-day

@@ -19,3 +19,4 @@ export {
   type ArcResult,
   type ArcTolerance,
 } from './arcs.js';
+export { normaliseLabel } from './flow.js';

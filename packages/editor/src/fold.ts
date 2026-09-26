@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { foldService } from '@codemirror/language';
-import type { EditorState } from '@codemirror/state';
-import { tokenizeLine, type OWordToken } from '@woodpatch/gcode-core';
+import type { EditorState, Text } from '@codemirror/state';
+import { normaliseLabel, tokenizeLine, type OWordToken } from '@woodpatch/gcode-core';
 
 /** Opener keyword → the keyword that closes it (same label). */
 const CLOSER: Readonly<Record<string, string>> = {
@@ -13,48 +13,81 @@ const CLOSER: Readonly<Record<string, string>> = {
   do: 'while',
   repeat: 'endrepeat',
 };
+const CLOSERS = new Set(Object.values(CLOSER));
 
-/** How far to look for a closer: a fold never costs a scan of a huge file. */
-const MAX_SCAN = 20_000;
+/** O-word lines are short; look for the O-word in at most this many characters. */
+const SCAN_CHARS = 1000;
 const MAYBE_OWORD = /(^|[^a-z])o\s*(\d|<)/i;
 
 function owordOf(text: string): { label: string; keyword: string } | null {
-  if (!MAYBE_OWORD.test(text)) return null;
-  const t = tokenizeLine(text, 1).tokens.find((x): x is OWordToken => x.kind === 'oword');
+  const head = text.slice(0, SCAN_CHARS);
+  if (!MAYBE_OWORD.test(head)) return null;
+  let t: OWordToken | undefined;
+  try {
+    t = tokenizeLine(head, 1).tokens.find((x): x is OWordToken => x.kind === 'oword');
+  } catch {
+    return null;
+  }
   if (!t || !t.keyword) return null;
-  const raw = text.slice(t.label.start, t.label.end);
-  const label = raw.startsWith('<')
-    ? raw.slice(1, -1).replace(/[ \t]/g, '').toLowerCase()
-    : String(Number(raw));
-  return { label, keyword: t.keyword };
+  // The core's own normalisation (o0100 = o100, <My Sub> = <mysub>), so they can't drift.
+  return { label: normaliseLabel(head.slice(t.label.start, t.label.end)), keyword: t.keyword };
+}
+
+/**
+ * Opener line → closer line, for the whole document, in ONE pass. It's built once per
+ * document version (Text is immutable, so a WeakMap keyed on it is exact). The fold
+ * gutter then answers every line from the map. Scanning ahead per line and per update
+ * cost about 2.8 s with 150 unclosed openers on screen (reviewer, toolkit #21).
+ *
+ * Pairing uses a stack per label: an opener pushes; its closer pops the nearest open
+ * block of the matching kind; a `while` closes an open `do` with its label, and
+ * otherwise opens a while loop. Same-label blocks therefore nest.
+ */
+const indexes = new WeakMap<Text, ReadonlyMap<number, number>>();
+
+function foldIndex(doc: Text): ReadonlyMap<number, number> {
+  const cached = indexes.get(doc);
+  if (cached) return cached;
+  const pairs = new Map<number, number>();
+  const open = new Map<string, { line: number; keyword: string }[]>();
+  let n = 0;
+  for (const text of doc.iterLines()) {
+    n++;
+    const o = owordOf(text);
+    if (!o) continue;
+    const stack = open.get(o.label) ?? [];
+    open.set(o.label, stack);
+    const top = stack[stack.length - 1];
+    if (o.keyword === 'while' && top?.keyword === 'do') {
+      stack.pop();
+      pairs.set(top.line, n);
+    } else if (CLOSER[o.keyword]) {
+      stack.push({ line: n, keyword: o.keyword });
+    } else if (CLOSERS.has(o.keyword)) {
+      for (let k = stack.length - 1; k >= 0; k--) {
+        const b = stack[k];
+        if (b && CLOSER[b.keyword] === o.keyword) {
+          stack.splice(k, 1);
+          pairs.set(b.line, n);
+          break;
+        }
+      }
+    }
+  }
+  indexes.set(doc, pairs);
+  return pairs;
 }
 
 /**
  * The fold range for an O-word block opening at document line `n`: from the end of
  * the opening line to the end of the line before its closer, so the closer stays
- * visible. Same-label blocks nest (a sub calling itself recursively has one body).
+ * visible. Null for a line that opens nothing, has no closer, or has nothing to fold.
  */
 export function oWordFoldRange(state: EditorState, n: number): { from: number; to: number } | null {
   const doc = state.doc;
-  const open = owordOf(doc.line(n).text);
-  if (!open) return null;
-  const closer = CLOSER[open.keyword];
-  if (!closer) return null;
-  let depth = 0;
-  const last = Math.min(doc.lines, n + MAX_SCAN);
-  for (let i = n + 1; i <= last; i++) {
-    const o = owordOf(doc.line(i).text);
-    if (!o || o.label !== open.label) continue;
-    if (o.keyword === open.keyword && open.keyword !== 'do') depth++;
-    else if (o.keyword === closer) {
-      if (depth === 0) {
-        if (i === n + 1) return null; // nothing between to fold
-        return { from: doc.line(n).to, to: doc.line(i - 1).to };
-      }
-      depth--;
-    }
-  }
-  return null;
+  const closer = foldIndex(doc).get(n);
+  if (closer === undefined || closer <= n + 1) return null;
+  return { from: doc.line(n).to, to: doc.line(closer - 1).to };
 }
 
 export const gcodeFolding = foldService.of((state, lineStart) => {

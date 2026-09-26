@@ -4,12 +4,15 @@ import { EditorState, Text } from '@codemirror/state';
 import { interpret, parse, type Diagnostic } from '@woodpatch/gcode-core';
 import { describe, expect, it } from 'vitest';
 import {
+  buildHighlights,
   cursorLine,
   gcode,
   lineSpans,
+  MAX_STYLED_CHARS,
   oWordFoldRange,
   pathLineField,
   setPathLine,
+  styledSpans,
   toLintDiagnostics,
 } from './index.js';
 
@@ -174,5 +177,102 @@ describe('line ↔ path sync (state level)', () => {
   it('reports the cursor line', () => {
     const s = EditorState.create({ doc: 'a\nb\nc', selection: { anchor: 3 } });
     expect(cursorLine(s)).toBe(2);
+  });
+});
+
+describe('review findings on #21, pinned', () => {
+  it('styles a long line split into several visible ranges ONCE (was a crash)', () => {
+    const long = 'G1 ' + Array.from({ length: 800 }, (_, i) => `X${i}`).join(' ');
+    const state = EditorState.create({ doc: `G0 X1\n${long}\nG0 Y2` });
+    const l2 = state.doc.line(2);
+    const fake = {
+      state,
+      // CodeMirror's long-line gap: the visible part of line 2 arrives as two ranges,
+      // plus a cursor window that starts inside the same line.
+      visibleRanges: [
+        { from: 0, to: l2.from + 100 },
+        { from: l2.from + 3000, to: l2.from + 3100 },
+        { from: l2.from + 3050, to: state.doc.length },
+      ],
+    };
+    expect(() => buildHighlights(fake)).not.toThrow();
+    const set = buildHighlights(fake);
+    let marks = 0;
+    set.between(l2.from, l2.to, () => {
+      marks++;
+    });
+    expect(marks).toBeGreaterThan(0);
+  });
+
+  it('never throws on pathological lines, and styles at most MAX_STYLED_CHARS', () => {
+    const t0 = performance.now();
+    expect(() => styledSpans('X' + '-'.repeat(10_000), 5)).not.toThrow();
+    expect(() => styledSpans('X' + '#'.repeat(10_000), 5)).not.toThrow();
+    const huge = 'N1'.repeat(50_000);
+    const spans = styledSpans(huge, 5);
+    expect(spans.every((s) => s.to <= MAX_STYLED_CHARS)).toBe(true);
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+
+  it('skips line 1’s byte-order mark, as the core does', () => {
+    expect(styledSpans('﻿%', 1)).toEqual([{ from: 1, to: 2, cls: 'gc-percent' }]);
+    expect(styledSpans('﻿/G0', 1).map((s) => s.cls)).toEqual(['gc-blockdelete', 'gc-g']);
+  });
+
+  it('folds from a one-pass index: 150 unclosed openers cost next to nothing', () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 150; i++) lines.push(`o${i} while [1]`, 'G0 X1');
+    for (let i = 0; i < 20_000; i++) lines.push('G1 X1 Y2');
+    const s = EditorState.create({ doc: lines.join('\n') });
+    const t0 = performance.now();
+    for (let pass = 0; pass < 20; pass++) for (let n = 1; n <= 300; n++) oWordFoldRange(s, n);
+    expect(performance.now() - t0).toBeLessThan(500);
+    expect(oWordFoldRange(s, 1)).toBeNull();
+  });
+
+  it('pairs blocks through nesting and a do’s closing while', () => {
+    const s = EditorState.create({
+      doc: [
+        'o1 if [1]',
+        'o1 if [1]',
+        'G0 X1',
+        'o1 endif',
+        'G0 X2',
+        'o1 endif',
+        'o2 do',
+        'G0',
+        'o2 while [0]',
+      ].join('\n'),
+    });
+    expect(oWordFoldRange(s, 1)?.to).toBe(s.doc.line(5).to);
+    expect(oWordFoldRange(s, 2)?.to).toBe(s.doc.line(3).to);
+    expect(oWordFoldRange(s, 7)?.to).toBe(s.doc.line(8).to);
+    expect(oWordFoldRange(s, 9)).toBeNull();
+  });
+
+  it('toLintDiagnostics tolerates a reversed span and a non-finite line', () => {
+    const doc = Text.of(['G0 X1']);
+    const d = (x: Partial<Diagnostic>): Diagnostic => ({
+      severity: 'error',
+      code: 'X',
+      message: 'm',
+      line: 1,
+      ...x,
+    });
+    const r = toLintDiagnostics(doc, [d({ span: { start: 4, end: 1 } }), d({ line: Number.NaN })]);
+    expect(r.diagnostics.map((x) => [x.from, x.to])).toEqual([
+      [4, 4],
+      [0, 5],
+    ]);
+  });
+
+  it('marks only whole line numbers', () => {
+    let s = EditorState.create({ doc: 'a\nb\nc', extensions: gcode({ gutter: false }) });
+    s = s.update({ effects: setPathLine.of(2.5) }).state;
+    let count = 0;
+    s.field(pathLineField).between(0, s.doc.length, () => {
+      count++;
+    });
+    expect(count).toBe(0);
   });
 });

@@ -46,5 +46,12 @@ export function showDiagnostics(view: EditorView, diagnostics: readonly Diagnost
 export { lineSpans, type StyleSpan } from './tokens.js';
 export { toLintDiagnostics } from './diagnostics.js';
 export { oWordFoldRange, gcodeFolding } from './fold.js';
-export { gcodeHighlighter, gcodeTheme } from './highlight.js';
+export {
+  buildHighlights,
+  gcodeHighlighter,
+  gcodeTheme,
+  MAX_STYLED_CHARS,
+  styledSpans,
+  type VisibleView,
+} from './highlight.js';
 export { cursorLine, onCursorLine, pathLineField, setPathLine, showPathLine } from './sync.js';
