@@ -33,9 +33,9 @@ test('N1: the simulated bounding box always includes the origin', () => {
   assert.deepEqual([r.min.x, r.min.y, r.min.z], [0, 0, 0]);
 });
 
-test('N2: F on a line that also switches to G20 is NOT converted to mm', () => {
+test('N2: F on a line that also switches to G20 is read in the previous units (conformant: RS274 and LinuxCNC do the same)', () => {
   const r = run('G21\nG20 G1 X1 F10\n');
-  assert.equal(r.segs[0].feedRate, 10); // intended 254 mm/min
+  assert.equal(r.segs[0].feedRate, 10); // 10 mm/min: F at step 3, before units at step 12
   assert.ok(close(r.segs[0].to.x, 25.4)); // the axis word IS converted
 });
 

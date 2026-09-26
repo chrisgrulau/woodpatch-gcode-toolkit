@@ -300,6 +300,13 @@ reference machine and pinned Node. After parcel 2a, the lossless tokenizer alone
 about 0.84 s (872,824 tokens, 0 diagnostics), which leaves about 1.1 s for the
 interpreter.
 
+**Enforced in CI** (amended 2026-09-26, reviewer, toolkit #10). Absolute times on a CI
+runner can't be compared with a target set on the reference machine, so CI checks a
+**ratio**: core parse + interpret of aztec, divided by upstream's own parse of aztec, both
+measured on the same runner in the same job (`node tools/bench-core.mjs --ci`). On the
+reference machine the target is 2000 / 1379 ms = **1.45×**. After parcel 2c-1 the ratio is
+about 1.3×, so the remaining budget is visible, and spending it fails the build.
+
 ## ADR-0015: Primary dialect is Masso G3, firmware v5.13
 
 **Status:** Accepted, 2026-09-26 (operator).
@@ -398,6 +405,85 @@ Evaluation never throws. Division by zero, domain errors, undefined or non-integ
 parameters and non-finite results are diagnostics pointing at the responsible
 sub-expression. Nesting beyond `maxDepth` (64) is a diagnostic rather than a stack
 overflow, which fixes R1: its own example `[SIN[0]+10]` now simply evaluates to 10.
+
+## ADR-0019: The interpreter's contract
+
+**Status:** Accepted, 2026-09-26.
+
+**Decision.** `packages/core/src/interp/` turns a parsed program into an ordered list of
+`Step`s: linear moves, arcs, dwells, tool changes, spindle, coolant, pauses and the
+program end.
+
+- **Order of execution** within a line follows RS274/NGC as LinuxCNC documents it
+  ("Order of Execution"), not the order the words are written. That includes **F
+  before G20/G21**: `G20 G1 X1 F10` from G21 feeds at 10 mm/min, as in LinuxCNC
+  (`execute_block` runs `convert_feed_rate` before `convert_length_units`). Controllers
+  disagree on this line, so it's **dialect data** (`InterpreterRules.feedUnits`:
+  `at-feed-step`, the LinuxCNC default, or `end-of-line`), and a line that changes units
+  alongside an F word gets a **warning** either way. A redundant G21 in a CAM header
+  doesn't warn. A feed set on an earlier line stays physically the same across a unit
+  change, as in LinuxCNC. _Amended 2026-09-26 (reviewer, toolkit #10): the first draft
+  used end-of-line units as the default, which is the opposite of LinuxCNC. Masso's
+  behaviour is not yet known; see ADR-0015._
+- **Positions are machine coordinates in millimetres.** Every move also carries the
+  total work offset in force (coordinate system + G92/G52), so work coordinates are
+  `position − offset`. G53, G10, G92 and coordinate-system changes then compose
+  exactly, and a viewer can still draw in work coordinates.
+- **Offsets live in LinuxCNC's parameter layout**, verified against its "Numbered
+  Parameters" documentation. Programs that read or write them (`#5221` and so on) see
+  consistent values:
+  - G28 home #5161; G30 home #5181;
+  - G92/G52 flag #5210 and offsets #5211;
+  - active coordinate system #5220;
+  - coordinate system _n_ at #5221 + 20(n−1).
+
+  Values are stored in millimetres.
+
+- **A line that can't be executed is reported, and its motion is skipped**, so the tool
+  stays where it was (plan §4.2 item 4). That covers:
+  - an unknown or not-yet-interpreted code;
+  - two codes from one modal group;
+  - a repeated word (N3);
+  - a letter the dialect doesn't have (E: R6);
+  - a syntax or evaluation error;
+  - a feed move with no feed rate (upstream silently used 200 mm/min, N10);
+  - axis words claimed by both a group-0 code and an explicit motion code.
+
+  Upstream reported such lines and then moved anyway (N5, N6).
+
+- **Words with no effect** on their line (`G1 X1 R5`) are a _warning_, and the line
+  still runs. LinuxCNC treats this as an error. We're deliberately lenient, because the
+  line's meaning is unambiguous.
+- **G28/G30** rapid to the optional intermediate point, then to the stored position,
+  for the named axes or for all of them. A program can't know the machine's real stored
+  positions, so when it never set them (G28.1/G30.1) the machine origin is used, with
+  an info diagnostic saying so.
+- **Arcs are described, not resolved.** Each arc step carries its plane, direction, an
+  I/J/K centre (absolute, machine coordinates) or a signed R, and P turns. Resolving
+  the R-format centre and rejecting impossible arcs is the geometry layer's job
+  (parcel 2d: R2). A centre-format full circle with no axis words is legal and runs,
+  fixing R3.
+- **Not simulated, and said so:**
+  - cutter compensation (a warning; ADR-0016);
+  - tool length offsets (info; no tool table);
+  - coordinate-system rotation (a warning);
+  - machine I/O M-codes (a warning).
+- **Program end:** M2, M30 or a second `%` ends the program. Later lines aren't run, and
+  one info diagnostic says how many were skipped (R8). The block-delete switch
+  defaults to **on**, as on most controllers.
+- **Diagnostics:** the interpreter reports its own findings (including expression
+  errors). Syntax findings stay on the `Program`.
+- **Recognised but deferred**, with an error that names the parcel:
+  - canned cycles G73 and G81–G89 (2c-2), so a canned cycle is no longer drawn as a
+    rapid plunge (R4);
+  - O-words and M98/M99 (2c-3).
+
+  Controller-specific tables are for the dialect profiles (2e).
+
+**Performance.** aztec_calendar (224k lines) parses and interprets in about 1.68 s,
+the minimum of 10 runs on the reference machine via `node tools/bench-core.mjs`,
+against ADR-0014's 2 s target. The geometry layer (2d) has to fit in the remaining
+headroom, so it will build its path model without per-segment objects.
 
 ---
 

@@ -10,3 +10,4 @@
 export { ATTRIBUTION, type Attribution } from './attribution.js';
 export * from './syntax/index.js';
 export * from './expr/index.js';
+export * from './interp/index.js';
