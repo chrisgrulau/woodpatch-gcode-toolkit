@@ -48,6 +48,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint
         run: pnpm lint
+      - name: Build
+        # Before typecheck and test: packages import each other through their built
+        # dist/ (package exports), so the core must be built before the viewer and
+        # editor can be checked. pnpm -r builds in dependency order.
+        run: pnpm build
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
@@ -60,8 +65,6 @@ jobs:
         run: node tools/golden-legacy.cjs --check
       - name: Legacy harness tests (smoke + plan §2.4 reference values)
         run: node --test 'tools/**/*.test.cjs'
-      - name: Build
-        run: pnpm build
       - name: Licence notice survives into packages and minified bundles
         run: pnpm licence:packages
       - name: Parity ledger (every difference from upstream explained, ADR-0025)

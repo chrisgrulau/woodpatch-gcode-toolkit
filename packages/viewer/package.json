@@ -1,7 +1,58 @@
 {
   "name": "@woodpatch/gcode-viewer",
   "version": "0.0.0",
-  "private": true,
-  "description": "three.js 3D view and SVG/Canvas 2D view of a G-code path. Framework-free class API, worker-backed.",
-  "license": "MIT"
+  "description": "three.js 3D view of a G-code path. Framework-free class API, worker-backed.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "./dist/worker.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "woodpatch": {
+    "entries": [
+      "index",
+      "worker"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chrisgrulau/woodpatch-gcode-toolkit.git",
+    "directory": "packages/viewer"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@woodpatch/gcode-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "three": ">=0.186.0 <0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "@types/three": "0.186.0",
+    "three": "0.186.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
 }

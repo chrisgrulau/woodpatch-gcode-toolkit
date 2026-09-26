@@ -44,9 +44,20 @@ function licenceBanner(packageName) {
 
 rmSync(join(pkgDir, 'dist'), { recursive: true, force: true });
 
+// Entry points: `woodpatch.entries` in package.json (default: just "index"), each
+// src/<name>.ts → dist/<name>.js. Runtime and peer dependencies stay EXTERNAL: a
+// package must never carry its own copy of three.js or of another toolkit package,
+// or a host app would ship two (plan §4.1).
+const entries = pkg.woodpatch?.entries ?? ['index'];
+const external = [
+  ...Object.keys(pkg.dependencies ?? {}),
+  ...Object.keys(pkg.peerDependencies ?? {}),
+].flatMap((name) => [name, `${name}/*`]);
+
 await build({
-  entryPoints: [join(pkgDir, 'src/index.ts')],
-  outfile: join(pkgDir, 'dist/index.js'),
+  entryPoints: Object.fromEntries(entries.map((e) => [e, join(pkgDir, `src/${e}.ts`)])),
+  outdir: join(pkgDir, 'dist'),
+  external,
   bundle: true,
   format: 'esm',
   platform: 'neutral',
