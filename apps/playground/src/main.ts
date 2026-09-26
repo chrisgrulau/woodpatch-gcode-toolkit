@@ -67,7 +67,37 @@ const editor = new EditorView({
       drawSelection(),
       highlightActiveLine(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
-      EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto' } }),
+      // The page is dark, so the editor is too. `dark: true` also selects the editor
+      // package's dark token colours; without it, CodeMirror used the light ones and
+      // plain words were near-black on the dark background.
+      EditorView.theme(
+        {
+          '&': { height: '100%', color: 'var(--text)', backgroundColor: 'var(--bg)' },
+          '.cm-scroller': { overflow: 'auto' },
+          '.cm-content': { caretColor: 'var(--text)' },
+          '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--text)' },
+          '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+            { backgroundColor: '#3a4a6b' },
+          '.cm-activeLine': { backgroundColor: '#ffffff0a' },
+          '.cm-gutters': {
+            backgroundColor: 'var(--panel)',
+            color: 'var(--muted)',
+            borderRight: '1px solid var(--line)',
+          },
+          '.cm-activeLineGutter': { backgroundColor: '#ffffff12', color: 'var(--text)' },
+          '.cm-foldPlaceholder': {
+            backgroundColor: 'var(--panel)',
+            color: 'var(--muted)',
+            border: '1px solid var(--line)',
+          },
+          '.cm-tooltip': {
+            backgroundColor: 'var(--panel)',
+            color: 'var(--text)',
+            border: '1px solid var(--line)',
+          },
+        },
+        { dark: true },
+      ),
       gcode({ onCursorLine: (n) => viewer.highlightLine(n) }),
       // Refuse any edit that would take the document over the cap.
       EditorState.transactionFilter.of((tr) => {
