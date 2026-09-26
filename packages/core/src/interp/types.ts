@@ -57,10 +57,24 @@ type StepKind =
       readonly to: Position;
       readonly plane: Plane;
       readonly clockwise: boolean;
-      /** Centre in machine coordinates, when given by I/J/K. */
-      readonly centre: Position | null;
-      /** Signed radius in mm, when given by R (negative: the major arc). */
-      readonly radius: number | null;
+      /**
+       * Centre in machine coordinates, resolved for both I/J/K and R format (ADR-0022).
+       * Only the plane's two axes are meaningful; the others are the start's.
+       */
+      readonly centre: Position;
+      /** Radius at the start, in mm. */
+      readonly radius: number;
+      /**
+       * Radius at the end, in mm. It differs from `radius` only when the controller
+       * tolerated a mismatch: the tool then spirals, the radius changing evenly with angle.
+       */
+      readonly endRadius: number;
+      /**
+       * Signed sweep in radians, full turns included. Positive is counter-clockwise
+       * seen from the plane's positive normal (G17 +Z, G18 +Y, G19 +X), turning from
+       * the plane's first axis to its second (XY, ZX, YZ).
+       */
+      readonly sweep: number;
       /** Full turns from P (default 1). */
       readonly turns: number;
       readonly feed: Feed;
