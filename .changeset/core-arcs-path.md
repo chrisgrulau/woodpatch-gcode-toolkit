@@ -10,3 +10,13 @@ now always carry a resolved `centre`, plus `radius`, `endRadius` and signed
 `tessellate()` returns the toolpath as one polyline in typed arrays, within a
 chord tolerance, and `pathBounds()` returns exact bounding boxes (all, feed,
 rapid).
+
+As corrected in review against LinuxCNC 2.9:
+
+- the sweep follows the motion planner (`motionSweep`: a near-closed arc is a full
+  circle);
+- arc checks are fail-closed, with non-finite and R0 refused;
+- 2.9's arc word checks apply;
+- `tessellate()` budgets vertices before allocating (`maxChordsPerArc`, a
+  2,000,000 default for `maxVertices`, and `coarsened`), and uses a chord formula
+  that stays accurate at huge radii.

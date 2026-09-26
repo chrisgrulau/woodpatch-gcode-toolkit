@@ -21,10 +21,16 @@ export interface PathOptions {
   /** Maximum distance from a chord to its arc, in mm. Default 0.001 (1 µm). */
   readonly chordTolerance?: number;
   /**
-   * Safety cap on vertices, for untrusted input: an arc with P1000000000 turns
-   * would otherwise need billions. Default 20,000,000.
+   * The vertex budget, counted before anything is allocated: about 29 bytes per
+   * vertex, so the default 2,000,000 is about 58 MB. Over it, arcs are coarsened
+   * together to fit; only a program with more moves than the budget is truncated.
    */
   readonly maxVertices?: number;
+  /**
+   * Chords for any one arc: `G2 I-5 P126000` would otherwise need about 20 million
+   * (reviewer, toolkit #14). Over it the arc is coarsened. Default 100,000.
+   */
+  readonly maxChordsPerArc?: number;
 }
 
 /** Vertex kinds, for colouring. */
@@ -41,7 +47,12 @@ export interface PathBuffers {
   readonly step: Uint32Array;
   /** For each vertex after the first: VERTEX_RAPID, VERTEX_FEED or VERTEX_ARC. */
   readonly kind: Uint8Array;
-  /** True if `maxVertices` cut the path short. */
+  /**
+   * True if some arcs have fewer chords than the tolerance needs, because of
+   * `maxChordsPerArc` or the vertex budget. They're still drawn, just coarser.
+   */
+  readonly coarsened: boolean;
+  /** True if the program has more moves than `maxVertices`, so the path was cut short. */
   readonly truncated: boolean;
 }
 
@@ -70,14 +81,25 @@ const PLANES: Readonly<Record<Plane, readonly [Axis3, Axis3, Axis3]>> = {
 };
 const HALF_PI = Math.PI / 2;
 
-/** Chords for an arc: enough that none strays more than `tol` from it. */
-export function arcChords(arc: Arc, tol: number): number {
+/**
+ * Chords for an arc: enough that none strays more than `tol` from it, but at most
+ * `cap`. A chord subtending angle a is r(1 - cos(a/2)) = 2r sin²(a/4) from the arc at
+ * most, so a ≤ 4 asin(√(tol / 2r)). That form stays accurate at huge radii, where
+ * 2 acos(1 - tol/r) rounds to 0 and the count became infinite (reviewer, toolkit #14).
+ */
+export function arcChords(arc: Arc, tol: number, cap = 100_000): number {
+  return Math.min(chordsNeeded(arc, tol), cap);
+}
+
+/** The uncapped chord count for the tolerance (at least 1; Infinity if unbounded). */
+function chordsNeeded(arc: Arc, tol: number): number {
   const r = Math.max(arc.radius, arc.endRadius);
   const sweep = Math.abs(arc.sweep);
   if (!(r > 0) || !(sweep > 0)) return 1;
-  // A chord subtending angle a is r(1 - cos(a/2)) from the arc at most.
-  const maxAngle = tol >= r ? Math.PI : 2 * Math.acos(1 - tol / r);
-  return Math.max(1, Math.ceil(sweep / maxAngle));
+  const x = tol / (2 * r);
+  const maxAngle = x >= 0.5 ? Math.PI : 4 * Math.asin(Math.sqrt(x));
+  const n = Math.ceil(sweep / maxAngle);
+  return Number.isNaN(n) ? Infinity : Math.max(1, n);
 }
 
 /** The plane's axes as indices into an (x, y, z) triple: first, second, normal. */
@@ -110,18 +132,52 @@ function arcPoint(arc: Arc, start: number, t: number, out: Float64Array, at: num
 /** The toolpath as one polyline in typed arrays. */
 export function tessellate(steps: readonly Step[], options: PathOptions = {}): PathBuffers {
   const tol = options.chordTolerance ?? 0.001;
-  const cap = options.maxVertices ?? 20_000_000;
+  const budget = options.maxVertices ?? 2_000_000;
+  const perArc = options.maxChordsPerArc ?? 100_000;
   if (!(tol > 0)) throw new RangeError('chordTolerance must be positive');
 
-  // Pass 1: count, so each array is allocated once at its final size.
-  let count = 1;
-  let truncated = false;
+  // Pass 1: count, so nothing is allocated before the total is known.
+  const chords = new Uint32Array(steps.length);
+  let straight = 0;
+  let arcs = 0;
+  let arcChordTotal = 0;
+  let coarsened = false;
   let first: Extract<Step, { kind: 'linear' | 'arc' }> | undefined;
-  for (const s of steps) {
-    if (s.kind !== 'linear' && s.kind !== 'arc') continue;
-    first ??= s;
-    const n = s.kind === 'arc' ? arcChords(s, tol) : 1;
-    if (count + n > cap) {
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i] as Step;
+    if (s.kind === 'linear') {
+      first ??= s;
+      straight++;
+      chords[i] = 1;
+    } else if (s.kind === 'arc') {
+      first ??= s;
+      arcs++;
+      const needed = chordsNeeded(s, tol);
+      if (needed > perArc) coarsened = true;
+      const n = Math.min(needed, perArc);
+      chords[i] = n;
+      arcChordTotal += n;
+    }
+  }
+  // Over budget: coarsen the arcs together (each keeps at least one chord) rather
+  // than drop the end of the program. Only more MOVES than the budget truncates.
+  let truncated = false;
+  if (1 + straight + arcChordTotal > budget) {
+    const room = budget - 1 - straight;
+    if (arcs > 0 && room >= arcs) {
+      const factor = room / arcChordTotal;
+      for (let i = 0; i < steps.length; i++) {
+        if ((steps[i] as Step).kind === 'arc')
+          chords[i] = Math.max(1, Math.floor((chords[i] as number) * factor));
+      }
+      coarsened = true;
+    } else truncated = true;
+  }
+  let count = 1;
+  for (let i = 0; i < steps.length; i++) {
+    const n = chords[i] as number;
+    if (n === 0) continue;
+    if (count + n > budget) {
       truncated = true;
       break;
     }
@@ -148,7 +204,7 @@ export function tessellate(steps: readonly Step[], options: PathOptions = {}): P
       kind[v] = s.rapid ? VERTEX_RAPID : VERTEX_FEED;
       v++;
     } else if (s.kind === 'arc') {
-      const n = arcChords(s, tol);
+      const n = chords[i] as number;
       const start = startAngle(s);
       for (let k = 1; k <= n && v < count; k++) {
         if (k === n) {
@@ -163,7 +219,7 @@ export function tessellate(steps: readonly Step[], options: PathOptions = {}): P
       }
     }
   }
-  return { count, positions, step, kind, truncated };
+  return { count, positions, step, kind, coarsened, truncated };
 }
 
 class BoxBuilder {

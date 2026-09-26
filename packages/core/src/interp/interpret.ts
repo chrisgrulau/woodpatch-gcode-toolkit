@@ -794,6 +794,14 @@ class Interpreter {
       if (axisWords.length > 0 || (arcWords && (this.motion === 'G2' || this.motion === 'G3'))) {
         for (const w of axisWords) used.add(w.letter);
         this.move(n, words, g.has('53'), used);
+      } else if (explicitMotion.includes('2') || explicitMotion.includes('3')) {
+        // 2.9 convert_arc: a G2/G3 block with no I/J/K/R is an error, even with no axes.
+        this.report(
+          n,
+          'error',
+          'SEMANTIC_ARC_NO_CENTRE',
+          `${this.motion} needs R or centre offsets; line not run`,
+        );
       } else if (g.has('53')) {
         this.report(
           n,
@@ -1328,6 +1336,16 @@ class Interpreter {
       return;
     }
     const target = this.target(words, g53);
+    if (!AXES.every((a) => Number.isFinite(target[a]))) {
+      // e.g. G20 with a huge value overflows the x25.4 conversion (reviewer, toolkit #14).
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_NOT_FINITE',
+        'A coordinate is too large to be a number; line not run',
+      );
+      return;
+    }
     const offset = this.offset();
     const from = this.position;
 
@@ -1360,14 +1378,17 @@ class Interpreter {
     const wrongOffset = words.filter(
       (w) => 'IJK'.includes(w.letter) && !offsetLetters.includes(w.letter),
     );
-    for (const w of wrongOffset) {
-      this.report(
-        n,
-        'warning',
-        'SEMANTIC_OFFSET_NOT_IN_PLANE',
-        `${w.letter} is not a centre offset in the ${this.plane} plane; ignored`,
-        w.span,
-      );
+    // LinuxCNC 2.9 convert_arc: a centre word for another plane (K in G17) is an error.
+    if (wrongOffset.length > 0) {
+      for (const w of wrongOffset)
+        this.report(
+          n,
+          'error',
+          'SEMANTIC_OFFSET_NOT_IN_PLANE',
+          `${w.letter} is not a centre offset in the ${this.plane} plane; line not run`,
+          w.span,
+        );
+      return;
     }
     if (r && centreWords.length > 0) {
       this.report(
@@ -1387,11 +1408,25 @@ class Interpreter {
       );
       return;
     }
+    // Under G90.1 both centre words are required (2.9: "%c word missing in absolute
+    // center arc"); under G91.1 a missing one is 0.
+    if (!r && this.arcDistance === 'absolute' && centreWords.length < 2) {
+      const missing = offsetLetters.find((l) => !centreWords.some((w) => w.letter === l));
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_ARC_CENTRE_MISSING',
+        `${missing ?? '?'} word missing in an absolute-centre arc (G90.1); line not run`,
+      );
+      return;
+    }
     const p = words.find((w) => w.letter === 'P');
     let turns = 1;
     if (p) {
       used.add('P');
-      if (!Number.isInteger(p.value) || p.value < 1) {
+      // 2.9 interp_check: P must be within 0.001 of a whole number, then rounded.
+      const k = Math.round(p.value);
+      if (!(Math.abs(k - p.value) <= 0.001) || k < 1) {
         this.report(
           n,
           'error',
@@ -1401,7 +1436,7 @@ class Interpreter {
         );
         return;
       }
-      turns = p.value;
+      turns = k;
     }
     const u = this.units === 'inch' ? 25.4 : 1;
     const inch = this.units === 'inch';

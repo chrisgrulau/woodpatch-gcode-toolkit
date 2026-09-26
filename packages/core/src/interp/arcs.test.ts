@@ -6,6 +6,8 @@ import {
   LINUXCNC_INTERPRETER_RULES,
   findTurn,
   interpret,
+  motionSweep,
+  pathBounds,
   parse,
   type InterpretOptions,
   type Step,
@@ -140,5 +142,84 @@ describe('planes, turns and helices', () => {
     const [a] = arcs('G21 G90 F100\nG0 X10\nG2 I-10 Z-5');
     expect(a).toMatchObject({ from: { Z: 0 }, to: { X: 10, Y: 0, Z: -5 } });
     expect(a?.sweep).toBeCloseTo(-2 * PI, 12);
+  });
+});
+
+describe('review findings on #14, pinned (LinuxCNC 2.9 source)', () => {
+  it('cuts a FULL circle when the end is within CART_FUZZ of the start, G2 and G3 alike', () => {
+    // Incremental moves that return to the start with rounding noise, then an arc back
+    // to it: the machine cuts a full circle (pmCircleInit), out to X2.3.
+    for (const dir of ['G2', 'G3']) {
+      const src = `G21 G90 G17 F100\nG0 X0 Y0\nG91 G1 X0.1 Y0.1\nX0.1 Y0.1\nX0.1 Y0.1\nG90 ${dir} X0.3 Y0.3 I1 J0`;
+      const [a] = arcs(src);
+      expect(Math.abs(a?.sweep ?? 0), dir).toBeCloseTo(2 * PI, 9);
+      expect(pathBounds(run(src).steps).feed?.max.X, dir).toBeCloseTo(2.3, 6);
+    }
+    expect(motionSweep(1, 0, 0, 0, false, 1, 1 + 5e-9, 0)).toBeCloseTo(2 * PI, 12);
+    expect(motionSweep(1, 0, 0, 0, true, 1, 1 + 5e-9, 0)).toBeCloseTo(-2 * PI, 12);
+    // The planar rule on its own: at r=10 an end 5e-9 AHEAD in the arc's direction has
+    // a cross product of about 5e-8 (over CART_FUZZ), so only the endpoint distance
+    // (under 1e-8) makes it a full circle.
+    expect(motionSweep(10, 0, 0, 0, false, 1, 10, 5e-9)).toBeCloseTo(2 * PI, 12);
+    expect(motionSweep(10, 0, 0, 0, true, 1, 10, -5e-9)).toBeCloseTo(-2 * PI, 12);
+    // Further ahead than the fuzz, it's the tiny arc it looks like.
+    expect(motionSweep(10, 0, 0, 0, false, 1, 10, 1e-6)).toBeCloseTo(1e-7, 12);
+  });
+
+  it('agrees with find_turn away from the fuzz', () => {
+    for (const [a2, b2] of [
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+      [0.6, 0.8],
+    ] as const)
+      for (const cw of [false, true])
+        for (const turns of [1, 2])
+          expect(motionSweep(1, 0, 0, 0, cw, turns, a2, b2)).toBeCloseTo(
+            findTurn(1, 0, 0, 0, cw, turns, a2, b2),
+            12,
+          );
+  });
+
+  it('refuses non-finite values, fail-closed (G20 overflow)', () => {
+    // A value that fits a double but overflows x25.4 (G-code has no exponent notation).
+    const huge = '9' + '0'.repeat(307);
+    expect(errors(`G20 F10\nG2 X1 I${huge}`)).toEqual(['SEMANTIC_ARC_NOT_FINITE']);
+    expect(errors(`G20 F10\nG1 X${huge}`)).toEqual(['SEMANTIC_NOT_FINITE']);
+  });
+
+  it('refuses R0 with a tiny chord (no silent NaN arc)', () => {
+    expect(errors('G21 F100\nG2 X0.000001 R0')).toEqual(['SEMANTIC_ARC_ZERO_RADIUS']);
+  });
+
+  it('applies 2.9\u2019s arc word checks', () => {
+    // G90.1: both centre words required.
+    expect(errors('G21 F100 G90.1\nG0 X10\nG2 X0 Y0 I5')).toEqual(['SEMANTIC_ARC_CENTRE_MISSING']);
+    // G91.1: a missing one is 0.
+    expect(errors('G21 F100\nG0 X10\nG2 X0 Y0 I-5')).toEqual([]);
+    // K in the XY plane is refused.
+    expect(errors('G21 F100\nG0 X10\nG2 X0 K1 I-5')).toContain('SEMANTIC_OFFSET_NOT_IN_PLANE');
+    // A bare G2 is refused.
+    expect(errors('G21 F100\nG2')).toEqual(['SEMANTIC_ARC_NO_CENTRE']);
+    // P within 0.001 of a whole number is accepted and rounded.
+    expect(arcs('G21 F100\nG0 X10\nG2 I-10 P2.0005')[0]?.turns).toBe(2);
+    expect(errors('G21 F100\nG0 X10\nG2 I-10 P2.01')).toEqual(['SEMANTIC_ARC_TURNS']);
+  });
+
+  it('kills the three surviving mutants', () => {
+    // 100x rule alone: r=5000 with a 3 mm mismatch passes the relative test (0.06%).
+    expect(errors('G21 F100\nG0 X5000\nG2 X-5003 Y0 I-5000')).toEqual([
+      'SEMANTIC_ARC_RADIUS_MISMATCH',
+    ]);
+    // Zero END radius alone.
+    expect(errors('G21 F100\nG0 X0.02\nG2 X0 Y0 I-0.02')).toEqual(['SEMANTIC_ARC_ZERO_RADIUS']);
+  });
+
+  it('turns from Y to Z in G19, and uses inch tolerances for inch R arcs', () => {
+    const [a] = arcs('G21 G19 F100\nG0 Y10\nG3 Y0 Z10 J-10 K0');
+    expect(a?.sweep).toBeCloseTo(PI / 2, 12);
+    // 0.00005 in allowance: a chord 0.00004 in over 2R passes, 0.0001 in fails.
+    expect(errors('G20 F10\nG2 X2.00004 R1')).toEqual([]);
+    expect(errors('G20 F10\nG2 X2.0001 R1')).toEqual(['SEMANTIC_ARC_R_TOO_SMALL']);
   });
 });

@@ -43,10 +43,37 @@ describe('tessellate', () => {
     expect(t.positions).toHaveLength(3);
   });
 
-  it('stops at the vertex cap, and says so', () => {
-    const t = tessellate(steps('G21 G90 F100\nG0 X10\nG2 I-10 P1000'), { maxVertices: 500 });
+  it('coarsens an arc over the budget instead of dropping the rest of the path', () => {
+    const t = tessellate(steps('G21 G90 F100\nG0 X10\nG2 I-10 P1000\nG1 X20'), {
+      maxVertices: 500,
+    });
+    expect(t.truncated).toBe(false);
+    expect(t.coarsened).toBe(true);
+    expect(t.count).toBeLessThanOrEqual(500);
+    expect(vertex(t.positions, t.count - 1)).toEqual([20, 0, 0]); // the move after it survives
+  });
+
+  it('truncates only when there are more moves than the budget', () => {
+    const src = Array.from({ length: 20 }, (_, i) => `G0 X${i + 1}`).join('\n');
+    const t = tessellate(steps(src), { maxVertices: 10 });
     expect(t.truncated).toBe(true);
-    expect(t.count).toBe(1 + 1);
+    expect(t.count).toBe(10);
+  });
+
+  it('bounds one arc with a huge P before allocating (reviewer: 574 MB from one line)', () => {
+    const t0 = performance.now();
+    const t = tessellate(steps('G21 G90 F100\nG0 X5\nG2 I-5 P126000'));
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(t.count).toBeLessThanOrEqual(100_001 + 1);
+    expect(t.coarsened).toBe(true);
+  });
+
+  it('draws a huge-radius arc as one chord, and keeps everything after it', () => {
+    const t = tessellate(steps('G21 G90 F100\nG2 X10 Y0 R100000000000000\nG1 X20\nG1 X30'));
+    expect(t.truncated).toBe(false);
+    expect(t.coarsened).toBe(false);
+    expect(t.count).toBe(4);
+    expect(vertex(t.positions, 3)).toEqual([30, 0, 0]);
   });
 
   it('refuses a non-positive tolerance', () => {
@@ -185,4 +212,13 @@ describe('parity with upstream (where upstream was right)', () => {
       ours.forEach((v, k) => expect(v).toBeCloseTo(theirs[k] as number, 4));
     },
   );
+});
+
+describe('multi-turn spiral bounds', () => {
+  it('uses the last occurrence of a direction, where the spiral reaches furthest', () => {
+    // Three turns spiralling out from r=10 to r=10.02: the widest point in -X is on the
+    // last turn, near the end (radius ~10.02), not the first (~10.003).
+    const b = pathBounds(steps('G21 G90 F100\nG0 X10\nG3 X-10.02 Y0 I-10 J0 P3'));
+    expect(b.feed?.max.Y).toBeGreaterThan(10.015);
+  });
 });

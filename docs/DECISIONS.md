@@ -716,9 +716,10 @@ already handled a leading sign. The lossless property is unaffected.
 
 **Status:** Accepted, 2026-09-26.
 
-**Reference version: LinuxCNC 2.9.x.** `arc_data_ijk`, `arc_data_r`, `find_turn` and the
-tolerance constants are identical on the 2.9 branch and on master; only a parameter type
-in a signature differs.
+**Reference version: LinuxCNC 2.9.x.** The logic of `arc_data_ijk`, `arc_data_r` and
+`find_turn`, and the tolerance constants, are the same on the 2.9 branch and on master.
+Several function signatures moved to enum classes on master; the substance didn't
+change.
 
 **Decision: arcs.** Every G2/G3 is resolved to a centre, a start radius, an end
 radius and a signed sweep. The code is `interp/arcs.ts`, transcribed from
@@ -743,8 +744,32 @@ where it was.
     program's, as in LinuxCNC.
   - An accepted mismatch is a spiral: the radius changes evenly with angle, which is
     how LinuxCNC's planner moves.
-- **Sweep.** Positive is counter-clockwise from the plane's first axis to its second:
-  XY, ZX, YZ, as in LinuxCNC. Full turns from P are included.
+- **Sweep: the path the machine cuts** (corrected in review, toolkit #14). The first
+  cut used the interpreter's `find_turn`. In 2.9 that only feeds arc length and inverse
+  time. The motion planner's `pmCircleInit` (`_posemath.c`) decides the path cut, so
+  `motionSweep` transcribes it:
+  - the angle between the start radius and the end radius, projected and scaled, taken
+    the long way round when (rTan × rEnd)·normal < `CART_FUZZ` (1e-8);
+  - **a FULL circle when the start and end, projected onto the plane, are within
+    1e-8**. That's the case after incremental moves that return to the start with
+    rounding noise, where `find_turn` gave a sweep of zero and drew nothing;
+  - `CIRCLE_FUZZ`/2 for an angle of exactly zero;
+  - 2π for each extra turn.
+- **One deliberate numerical difference:** the angle is computed as
+  atan2(|cross|, dot), not acos(dot / r²). They're the same angle, but acos rounds to 0
+  for a 10 mm chord at radius 1e14, which would make it a 50 km arc. `find_turn` is kept
+  and exported; away from the fuzz a test holds the two equal.
+- Positive sweep is counter-clockwise from the plane's first axis to its second (XY, ZX,
+  YZ). P within 0.001 of a whole number is accepted and rounded (2.9 `interp_check`).
+- **Word checks from 2.9's `convert_arc`,** each refusing the line:
+  - a centre word for another plane (K in G17);
+  - a missing centre word under G90.1 (under G91.1 it's 0);
+  - a G2/G3 with no I/J/K/R, even with no axis words.
+- **Fail-closed, and finite.** Every tolerance check asks "is it within?", so a NaN
+  refuses the line. Non-finite values (e.g. a G20 overflow of x25.4) are refused, for
+  arcs (`SEMANTIC_ARC_NOT_FINITE`) and straight moves (`SEMANTIC_NOT_FINITE`).
+- **R0,** or any R below the radius tolerance, is refused. 2.9 takes asin(0/0) and
+  moves on a NaN arc; that would break the no-silent-NaN rule.
 
 **The step shape changed** (pre-1.0; see the changeset). An arc step now always has
 `centre`, and adds `radius`, `endRadius` and `sweep`. The old `centre: null` and signed
@@ -768,8 +793,15 @@ derived view, not a replacement for steps.
     tool.
   - Chords stay within the tolerance of the true arc (default 1 µm, as upstream),
     including helices and spirals.
-  - A vertex cap (default 20M) guards against `P1000000000`; the result says when it
-    truncated.
+  - **Budgets, counted before anything is allocated** (corrected in review: one legal
+    line, `G2 I-5 P126000`, allocated 574 MB):
+    - `maxChordsPerArc` (100,000) coarsens any single arc over it;
+    - `maxVertices` (2,000,000, about 58 MB) coarsens all arcs together to fit;
+    - only a program with more MOVES than the budget is truncated.
+    - The result reports `coarsened` and `truncated`.
+  - **The chord count uses 4 asin(√(tol / 2r)).** It stays accurate at huge radii, where
+    the earlier 2 acos(1 − tol/r) rounded to zero, the count became infinite, and
+    everything after the arc was dropped.
   - Arrays are sized in one counting pass, then filled. That's 11 ms on aztec (226k
     vertices).
 - **`pathBounds(steps)`** gives the exact box for all moves, and separately for feed

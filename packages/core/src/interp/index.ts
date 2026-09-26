@@ -14,6 +14,7 @@ export {
   arcFromCentre,
   arcFromRadius,
   findTurn,
+  motionSweep,
   type ArcGeometry,
   type ArcResult,
   type ArcTolerance,
