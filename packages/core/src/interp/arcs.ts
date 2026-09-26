@@ -30,6 +30,12 @@ export interface ArcTolerance {
    */
   readonly radiusMm: number;
   readonly radiusInch: number;
+  /**
+   * What a mismatch beyond the tolerance is. `error` (default): the line is refused.
+   * `warn`: the controller's real limit is unmeasured, so the arc is drawn, with a
+   * warning (Masso, parcel 2e-2).
+   */
+  readonly beyond?: 'error' | 'warn';
 }
 
 /** LinuxCNC's defaults (interp_internal.hh). */
@@ -54,7 +60,12 @@ export interface ArcGeometry {
 }
 
 export type ArcResult =
-  | { readonly ok: true; readonly arc: ArcGeometry }
+  | {
+      readonly ok: true;
+      readonly arc: ArcGeometry;
+      /** Set when the arc is beyond a tolerance whose real limit is unmeasured. */
+      readonly warning?: { readonly code: string; readonly message: string };
+    }
   | { readonly ok: false; readonly code: string; readonly message: string };
 
 const TAU = 2 * Math.PI;
@@ -188,8 +199,19 @@ export function arcFromCentre(
   }
   const absErr = Math.abs(radius - endRadius);
   const relErr = absErr / Math.max(radius, endRadius);
+  const sweep = motionSweep(a1, b1, ca, cb, clockwise, turns, a2, b2);
   if (!(absErr <= t.spiral * 100) || (!(relErr <= tol.spiralRelative) && !(absErr <= t.spiral))) {
     const f = (v: number) => (inch ? v / 25.4 : v).toFixed(4);
+    if (tol.beyond === 'warn') {
+      return {
+        ok: true,
+        arc: { ca, cb, radius, endRadius, sweep },
+        warning: {
+          code: 'SEMANTIC_ARC_RADIUS_MISMATCH_UNTESTED',
+          message: `Radius to the end of the arc (${f(endRadius)}) differs from the radius to the start (${f(radius)}) by more than this controller is known to accept; it may refuse the line`,
+        },
+      };
+    }
     return {
       ok: false,
       code: 'SEMANTIC_ARC_RADIUS_MISMATCH',
@@ -198,13 +220,7 @@ export function arcFromCentre(
   }
   return {
     ok: true,
-    arc: {
-      ca,
-      cb,
-      radius,
-      endRadius,
-      sweep: motionSweep(a1, b1, ca, cb, clockwise, turns, a2, b2),
-    },
+    arc: { ca, cb, radius, endRadius, sweep },
   };
 }
 

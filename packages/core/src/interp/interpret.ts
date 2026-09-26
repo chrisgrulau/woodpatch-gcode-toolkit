@@ -239,6 +239,11 @@ class Interpreter {
   /** An M98 or M99 on the current line, run after the rest of it. */
   private pendingCall: { readonly p: Word | undefined; readonly l: Word | undefined } | null = null;
   private pendingReturn = false;
+  /** Machine positions for Masso G28/G30 (parcel 2e-2). */
+  private readonly machineHome: Partial<Position>;
+  private readonly machinePark: Partial<Position> | undefined;
+  /** The line of a spindle-speed change not yet settled by a dwell (Masso advice). */
+  private settleLine: number | null = null;
 
   constructor(options: InterpretOptions) {
     this.rules = options.rules ?? options.dialect?.expressions ?? LINUXCNC_RULES;
@@ -246,6 +251,8 @@ class Interpreter {
       options.interpreterRules ?? options.dialect?.interpreter ?? LINUXCNC_INTERPRETER_RULES;
     this.blockDelete = options.blockDelete ?? true;
     this.position = { ...ZERO, ...options.start };
+    this.machineHome = options.machine?.home ?? {};
+    this.machinePark = options.machine?.park;
     this.resolve = options.resolveProgram;
     this.limits = { ...DEFAULT_LIMITS, ...options.limits };
     this.numbered.set(5220, 1);
@@ -530,6 +537,7 @@ class Interpreter {
         words.push({ letter: t.letter, value: t.value.value, span: t.span });
       }
     }
+    if (this.settleLine !== null && motion === 'G1') this.adviseSettle(line.lineNo);
     this.move(line.lineNo, words, false, NO_USED);
     return true;
   }
@@ -708,7 +716,9 @@ class Interpreter {
         this.feedRate =
           this.feedMode === 'inverse-time' ? f.value : f.value * (feedUnits === 'inch' ? 25.4 : 1);
     }
-    const s = get('S');
+    // Masso M66: S is the number of lines to skip, not a spindle speed.
+    const m66Wait = this.behaviour.m66 === 'masso-wait' && m.has('66');
+    const s = m66Wait ? undefined : get('S');
     if (s) {
       if (s.value < 0)
         this.report(
@@ -719,6 +729,14 @@ class Interpreter {
           s.span,
         );
       else {
+        // A speed change while running isn't waited for (spindleSettleAdvice).
+        if (
+          this.behaviour.spindleSettleAdvice &&
+          this.spindle.state !== 'off' &&
+          this.spindle.rpm !== s.value &&
+          !m.has('5')
+        )
+          this.settleLine = n;
         this.spindle = { ...this.spindle, rpm: s.value };
         if (this.spindle.state !== 'off' && !m.has('3') && !m.has('4') && !m.has('5')) {
           this.steps.push({ kind: 'spindle', line: n, state: this.spindle.state, rpm: s.value });
@@ -729,6 +747,29 @@ class Interpreter {
     if (t) this.selectedTool = Math.round(t.value);
 
     // Tool change (M6), spindle (M3/M4/M5), coolant (M7/M8/M9), overrides (M48/M49).
+    if (m.has('6') && this.behaviour.toolChangeChecks) {
+      const tAt = words.findIndex((w) => w.letter === 'T');
+      const mAt = words.findIndex((w) => w.letter === 'M' && codeKey(w.value) === '6');
+      if (tAt > mAt && mAt >= 0)
+        this.report(
+          n,
+          'warning',
+          'SEMANTIC_TOOL_AFTER_M6',
+          'T comes after M06 on this line: this controller loads the tool differently then (Masso docs: T must precede M06)',
+        );
+      if (this.spindle.state !== 'off' && !m.has('5'))
+        this.report(
+          n,
+          'warning',
+          'SEMANTIC_M6_SPINDLE_ON',
+          'Tool change with the spindle running: this controller requires M05 before M06',
+        );
+    }
+    if (m.has('6.1')) {
+      // Masso M6.1: unload the tool from the spindle.
+      this.tool = null;
+      this.steps.push({ kind: 'tool-change', line: n, tool: null });
+    }
     if (m.has('6')) {
       if (this.selectedTool === null)
         this.report(
@@ -742,6 +783,8 @@ class Interpreter {
     }
     for (const [code, state] of SPINDLE_CODES) {
       if (m.has(code)) {
+        // Starting from stopped, the controller waits for spin-up itself; stopping ends it.
+        if (state === 'off' || this.spindle.state === 'off') this.settleLine = null;
         this.spindle = { ...this.spindle, state };
         this.steps.push({ kind: 'spindle', line: n, state, rpm: this.spindle.rpm });
       }
@@ -752,7 +795,28 @@ class Interpreter {
       if (m.has('8')) this.flood = true;
       this.steps.push({ kind: 'coolant', line: n, mist: this.mist, flood: this.flood });
     }
+    if (m66Wait) {
+      for (const l of ['P', 'L', 'Q', 'S']) used.add(l);
+      const p = get('P');
+      const q = get('Q');
+      const skip = Math.max(0, Math.round(get('S')?.value ?? 0));
+      this.steps.push({
+        kind: 'wait',
+        line: n,
+        input: p ? Math.round(p.value) : null,
+        timeoutSeconds: q ? q.value / 1000 : null,
+        skipLines: skip,
+      });
+      if (skip > 0)
+        this.report(
+          n,
+          'warning',
+          'SEMANTIC_WAIT_MAY_SKIP',
+          `If the input condition is met, the controller skips the next ${skip} line(s); the preview runs them`,
+        );
+    }
     for (const code of IO_CODES) {
+      if (code === '66' && m66Wait) continue;
       if (m.has(code))
         this.report(
           n,
@@ -769,7 +833,10 @@ class Interpreter {
       if (!p) this.report(n, 'error', 'SEMANTIC_DWELL_WITHOUT_P', 'G4 needs a P word (seconds)');
       else if (p.value < 0)
         this.report(n, 'error', 'SEMANTIC_NEGATIVE_DWELL', 'Dwell time cannot be negative', p.span);
-      else this.steps.push({ kind: 'dwell', line: n, seconds: this.dwellSeconds(p.value) });
+      else {
+        this.steps.push({ kind: 'dwell', line: n, seconds: this.dwellSeconds(p.value) });
+        this.settleLine = null;
+      }
     }
 
     // Plane, units, cutter compensation, tool length offset, coordinate system,
@@ -803,6 +870,20 @@ class Interpreter {
     if (g.has('49')) this.toolLength = false;
     for (const [code, cs] of WCS_CODES) {
       if (g.has(code)) this.setParam(5220, cs);
+    }
+    if (g.has('54.1')) {
+      // Masso extended offsets G54.1 P1-P100, stored as coordinate systems 101-200.
+      used.add('P');
+      const p = get('P');
+      const k = p ? Math.round(p.value) : NaN;
+      if (!p || Math.abs(p.value - k) > 1e-4 || !(k >= 1 && k <= 100))
+        this.report(
+          n,
+          'error',
+          'SEMANTIC_G54_1_P',
+          'G54.1 needs P1 to P100 (the extended work offset)',
+        );
+      else this.setParam(5220, 100 + k);
     }
     if (g.has('61')) this.pathControl = 'G61';
     if (g.has('61.1')) this.pathControl = 'G61.1';
@@ -843,7 +924,8 @@ class Interpreter {
       used.add('L');
       used.add('P');
       used.add('R');
-      this.g10(n, words);
+      if (this.behaviour.g10 === 'masso') this.g10Masso(n, words);
+      else this.g10(n, words);
     }
     if (g.has('92')) this.g92(words);
     if (g.has('52')) this.g52(words);
@@ -853,7 +935,8 @@ class Interpreter {
     }
     if (g.has('92.3')) this.setParam(5210, 1);
     if (g.has('28') || g.has('30')) {
-      this.home(n, g.has('28') ? 5161 : 5181, words);
+      if (this.behaviour.homing === 'masso') this.homeMasso(n, g.has('28') ? 28 : 30, words);
+      else this.home(n, g.has('28') ? 5161 : 5181, words);
       motionSuspended = true;
     }
 
@@ -1448,6 +1531,7 @@ class Interpreter {
     }
     const feed = this.feed(n, words);
     if (!feed) return;
+    if (this.settleLine !== null) this.adviseSettle(n);
     if (this.motion === 'G1') {
       this.steps.push({ kind: 'linear', line: n, rapid: false, from, to: target, feed, offset });
       this.position = target;
@@ -1578,6 +1662,7 @@ class Interpreter {
       this.report(n, 'error', result.code, result.message);
       return;
     }
+    if (result.warning) this.report(n, 'warning', result.warning.code, result.warning.message);
     const arc = result.arc;
     this.steps.push({
       kind: 'arc',
@@ -1728,6 +1813,7 @@ class Interpreter {
     const at = (px: number, py: number, pz: number): Position => ({ ...pos, X: px, Y: py, Z: pz });
     let from: Position = pos;
     const feed: Feed = { mode: 'per-minute', mmPerMinute: this.feedRate };
+    if (this.settleLine !== null) this.adviseSettle(n);
     if (initial < r) {
       const to = at(pos.X, pos.Y, r);
       steps.push({ kind: 'linear', line: n, rapid: true, from, to, feed: null, offset });
@@ -1845,10 +1931,11 @@ class Interpreter {
     return 5221 + 20 * (cs - 1);
   }
 
-  /** Writes a parameter; any write in the offset range (#5210-#5390) invalidates the cached offset. */
+  /** Writes a parameter; any write from #5210 up (offsets) invalidates the cached offset. */
   private setParam(i: number, v: number): void {
     this.numbered.set(i, v);
-    if (i >= 5210 && i <= 5390) this.offsetCache = null;
+    // #5210 up: G92 and every coordinate system, including Masso's extended 101-200.
+    if (i >= 5210) this.offsetCache = null;
   }
 
   private offset(): Position {
@@ -1989,6 +2076,129 @@ class Interpreter {
       offset,
     });
     this.position = to;
+  }
+
+  /**
+   * Masso G10 (docs, "G10"). L2: the offset is the value. L2.1: the ACTIVE offset plus
+   * the value. L20 and L20.1: the same for the extended offsets G54.1 P1-P100. P0 is
+   * the active offset, whichever kind it is.
+   */
+  private g10Masso(n: number, words: readonly Word[]): void {
+    const l = words.find((w) => w.letter === 'L');
+    const p = words.find((w) => w.letter === 'P');
+    const form = l ? codeKey(l.value) : '';
+    if (!['2', '2.1', '20', '20.1'].includes(form)) {
+      this.report(n, 'error', 'SEMANTIC_G10_FORM', 'G10 needs L2, L2.1, L20 or L20.1');
+      return;
+    }
+    const extended = form.startsWith('20');
+    const k = p ? Math.round(p.value) : NaN;
+    const max = extended ? 100 : 6;
+    if (!p || Math.abs(p.value - k) > 1e-4 || !(k >= 0 && k <= max)) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_G10_P',
+        `G10 L${form} needs P0 to P${max} (P0 is the active work offset)`,
+      );
+      return;
+    }
+    const active = this.coordinateSystem();
+    const cs = k === 0 ? active : extended ? 100 + k : k;
+    const base = this.wcsBase(cs);
+    const relative = form.endsWith('.1');
+    const activeOffset = this.wcsOffsetOf(active);
+    for (const w of words) {
+      if (!(w.letter in AXIS_INDEX)) continue;
+      const a = w.letter as Axis;
+      const v = this.axisValue(w);
+      this.setParam(base + AXIS_INDEX[a], relative ? activeOffset[a] + v : v);
+    }
+  }
+
+  /**
+   * Masso G28 and G30 (docs, v5.13). G28: to machine home, optionally via an
+   * intermediate point (work coordinates, or incremental under G91); only the named
+   * axes move, or all of them if none is named. G30: to the parking position set on
+   * the machine. Either way Z goes first, then the other axes together.
+   */
+  private homeMasso(n: number, which: 28 | 30, words: readonly Word[]): void {
+    const axisWords = words.filter((w) => w.letter in AXIS_INDEX);
+    const offset = this.offset();
+    let dest: Partial<Position>;
+    let axes: Axis[];
+    if (which === 28) {
+      if (axisWords.length > 0) {
+        const via = this.target(words, false);
+        this.steps.push({
+          kind: 'linear',
+          line: n,
+          rapid: true,
+          from: this.position,
+          to: via,
+          feed: null,
+          offset,
+        });
+        this.position = via;
+      }
+      axes = axisWords.length > 0 ? axisWords.map((w) => w.letter as Axis) : [...AXES];
+      dest = Object.fromEntries(axes.map((a) => [a, this.machineHome[a] ?? 0]));
+    } else {
+      if (axisWords.length > 0)
+        this.report(
+          n,
+          'warning',
+          'SEMANTIC_G30_AXES_IGNORED',
+          "Axis words with G30 aren't defined by this controller's docs; ignored",
+        );
+      if (!this.machinePark) {
+        this.report(
+          n,
+          'warning',
+          'SEMANTIC_PARK_UNKNOWN',
+          'G30 goes to the parking position set on the machine, which is not known here (pass machine.park); the move is not drawn',
+        );
+        return;
+      }
+      dest = this.machinePark;
+      axes = AXES.filter((a) => dest[a] !== undefined);
+    }
+    // Z first, then the rest together.
+    const order: Axis[][] = axes.includes('Z') ? [['Z'], axes.filter((a) => a !== 'Z')] : [axes];
+    for (const group of order) {
+      const to: Record<Axis, number> = { ...this.position };
+      let moved = false;
+      for (const a of group) {
+        const v = dest[a];
+        if (v !== undefined && v !== to[a]) {
+          to[a] = v;
+          moved = true;
+        }
+      }
+      if (!moved) continue;
+      this.steps.push({
+        kind: 'linear',
+        line: n,
+        rapid: true,
+        from: this.position,
+        to,
+        feed: null,
+        offset,
+      });
+      this.position = to;
+    }
+  }
+
+  /** A feed move right after an unsettled spindle-speed change: suggest a dwell. */
+  private adviseSettle(n: number): void {
+    const at = this.settleLine as number;
+    this.settleLine = null;
+    this.report(
+      at,
+      'info',
+      'SEMANTIC_SPINDLE_NOT_SETTLED',
+      `Spindle speed changed while running, and the feed move at line ${n} starts before it settles: this controller doesn't wait for the new speed. Consider a dwell (G4) after this line`,
+    );
   }
 
   // ── Parameters ──────────────────────────────────────────────────────────

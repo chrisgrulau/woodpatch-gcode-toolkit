@@ -76,6 +76,8 @@ export const MASSO_G3: Dialect = Object.freeze({
       spiralMm: 0.5,
       spiralInch: 0.5 / 25.4,
       spiralRelative: 0,
+      // Beyond 0.5 mm is untested: drawn, with a warning, not refused.
+      beyond: 'warn',
     }),
     codes: Object.freeze({
       // docs.masso.com.au "Supported G-codes".
@@ -93,12 +95,6 @@ export const MASSO_G3: Dialect = Object.freeze({
           667,
         ].map(String),
       ),
-      // Masso has these, with semantics that differ from LinuxCNC's: parcel 2e-2.
-      later: Object.freeze({
-        G10: "Masso's G10 (L2.1, L20 = extended offsets) arrives in parcel 2e-2",
-        G28: "Masso's G28 (machine home, Z first) arrives in parcel 2e-2",
-        G30: "Masso's G30 (parking position, Z first) arrives in parcel 2e-2",
-      }),
     }),
     parameters: false,
     // T7: a "/" line ran.
@@ -110,6 +106,16 @@ export const MASSO_G3: Dialect = Object.freeze({
     afterG80: 'rapid',
     // Docs (G73/G82/G83): "the previous canned cycle must be cancelled using G80".
     cycleSwitch: 'warn',
+    // Docs ("G10"): L2.1, and L20/L20.1 for the extended offsets G54.1 P1-P100.
+    g10: 'masso',
+    // Docs ("G28", "G30", v5.13): machine home / parking position, Z first.
+    homing: 'masso',
+    // Docs ("M66"): wait for an input; Q in ms; S lines skipped when met.
+    m66: 'masso-wait',
+    // Docs ("M06"): T before M06, and M05 before M06.
+    toolChangeChecks: true,
+    // Operator, 2026-09-26: a speed change while running isn't waited for.
+    spindleSettleAdvice: true,
   } satisfies InterpreterRules),
 });
 

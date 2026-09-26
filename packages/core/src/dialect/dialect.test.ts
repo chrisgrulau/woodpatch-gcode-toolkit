@@ -138,10 +138,6 @@ describe('Masso rules', () => {
     expect(codes('G0 Z5\nG81 X1 Z-1 R1 F100\nG83 X2 Z-1 R1 Q1', { dialect: LINUXCNC })).toEqual([]);
   });
 
-  it('holds G10, G28 and G30 until their Masso meanings arrive (2e-2)', () => {
-    expect(codes('G28', masso)).toEqual(['SEMANTIC_NOT_YET_SUPPORTED']);
-  });
-
   it('reads MSG after an N word, clears on a bare MSG, and knows MSG_W/MSG_SW', () => {
     const steps = run('N10 MSG Load Material\nN30 MSG\nMSG_W to phone\nMSG_SW both', masso).steps;
     expect(steps).toEqual([
@@ -163,11 +159,121 @@ describe('LinuxCNC and generic', () => {
 
   it('LinuxCNC refuses a Masso-only code; generic accepts every code known here', () => {
     expect(codes('G54.1 P1', { dialect: LINUXCNC })).toEqual(['SEMANTIC_UNSUPPORTED_CODE']);
-    expect(codes('G54.1 P1', { dialect: GENERIC })).toEqual(['SEMANTIC_NOT_YET_SUPPORTED']);
+    expect(codes('G54.1 P1', { dialect: GENERIC })).toEqual([]);
+    expect(codes('G68 R45', { dialect: GENERIC })).toEqual(['SEMANTIC_NOT_YET_SUPPORTED']);
   });
 
   it('defaults to LinuxCNC when no dialect is given', () => {
     expect(run('G0 X1').steps).toEqual(run('G0 X1', { dialect: LINUXCNC }).steps);
     expect(codes('G1 X1')).toEqual(['SEMANTIC_NO_FEED_RATE']);
+  });
+});
+
+describe('Masso positions and events (parcel 2e-2)', () => {
+  const ends = (src: string, options: InterpretOptions = masso) =>
+    moves(run(src, options).steps).map((s) => [s.to.X, s.to.Y, s.to.Z]);
+
+  it('G28 goes to machine home, Z first, then the other axes together', () => {
+    expect(ends('G0 X100 Y50 Z-5\nG28')).toEqual([
+      [100, 50, -5],
+      [100, 50, 0],
+      [0, 0, 0],
+    ]);
+    // A machine whose home isn't the origin.
+    const opts = { ...masso, machine: { home: { X: 1600, Y: 0, Z: 0 } } };
+    expect(ends('G0 X100 Y50 Z-5\nG28', opts).at(-1)).toEqual([1600, 0, 0]);
+  });
+
+  it('G28 with axis words goes via that point, and only those axes go home (docs)', () => {
+    // G90: via work X0 Y0 Z0 (G54 at X10 Y10), then only X, Y, Z home.
+    const src = 'G10 L2 P1 X10 Y10\nG54\nG0 X5 Y5 Z-5\nG28 X0 Y0 Z0';
+    // Machine (15,15,-5) → via work (0,0,0) = machine (10,10,0) → home. Z is
+    // already at home, so only X and Y move.
+    expect(ends(src).slice(-3)).toEqual([
+      [15, 15, -5],
+      [10, 10, 0],
+      [0, 0, 0],
+    ]);
+    // G91 G28 Z8: up 8 first, then only Z goes home; X and Y stay.
+    expect(ends('G0 X5 Y5 Z-10\nG91 G28 Z8\nG90').slice(-2)).toEqual([
+      [5, 5, -2],
+      [5, 5, 0],
+    ]);
+  });
+
+  it('G30 goes to the parking position, Z first; unknown, it says so and does not move', () => {
+    const opts = { ...masso, machine: { park: { X: 800, Y: 3900, Z: -20 } } };
+    expect(ends('G0 X100 Y50 Z-5\nG30', opts).slice(-2)).toEqual([
+      [100, 50, -20],
+      [800, 3900, -20],
+    ]);
+    const r = run('G0 X1\nG30', masso);
+    expect(moves(r.steps)).toHaveLength(1);
+    expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_PARK_UNKNOWN']);
+  });
+
+  it('G10: L2 sets, L2.1 adds to the active offset, L20 sets an extended offset (docs)', () => {
+    const at = (src: string) => ends(`${src}\nG0 X0 Y0`).at(-1);
+    expect(at('G10 L2 P1 X10 Y10\nG54')).toEqual([10, 10, 0]);
+    // Active G54 is (10,10): L2.1 P2 X10 Y20 makes G55 (20,30).
+    expect(at('G10 L2 P1 X10 Y10\nG54\nG10 L2.1 P2 X10 Y20\nG55')).toEqual([20, 30, 0]);
+    expect(at('G10 L20 P50 X100 Y200\nG54.1 P50')).toEqual([100, 200, 0]);
+    const r = run('G10 L20 P50 X100\nG54.1 P50', masso);
+    expect(r.state.coordinateSystem).toBe(150);
+    expect(codes('G54.1 P101', masso)).toEqual(['SEMANTIC_G54_1_P']);
+    expect(codes('G10 L2 P7 X1', masso)).toEqual(['SEMANTIC_G10_P']);
+  });
+
+  it('keeps LinuxCNC\u2019s G10 L20 (make the current position read the value)', () => {
+    const r = run('G0 X30\nG10 L20 P1 X10\nG0 X0', { dialect: LINUXCNC });
+    expect(moves(r.steps).at(-1)?.to.X).toBe(20);
+  });
+
+  it('M66 waits for an input; its S skips lines, not a spindle speed', () => {
+    const r = run('M3 S10000\nM66 P4 L3 Q1000 S2', masso);
+    expect(r.steps.at(-1)).toEqual({
+      kind: 'wait',
+      line: 2,
+      input: 4,
+      timeoutSeconds: 1,
+      skipLines: 2,
+    });
+    expect(r.state.spindle.rpm).toBe(10000);
+    expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_WAIT_MAY_SKIP']);
+  });
+
+  it('M6.1 unloads the tool', () => {
+    const r = run('T5 M6\nM6.1', masso);
+    expect(r.steps.at(-1)).toEqual({ kind: 'tool-change', line: 2, tool: null });
+    expect(r.state.tool).toBeNull();
+  });
+
+  it('warns when T follows M06 on the line, or the spindle is still running', () => {
+    expect(codes('M06 T5', masso)).toContain('SEMANTIC_TOOL_AFTER_M6');
+    expect(codes('T5 M06', masso)).toEqual([]);
+    expect(codes('M3 S1000\nT2 M6', masso)).toContain('SEMANTIC_M6_SPINDLE_ON');
+    expect(codes('M3 S1000\nM5\nT2 M6', masso)).toEqual([]);
+    expect(codes('M06 T5', { dialect: LINUXCNC })).toEqual([]);
+  });
+
+  it('suggests a dwell after a speed change while running, before the next feed move', () => {
+    const advice = (src: string) =>
+      run(src, masso).diagnostics.filter((d) => d.code === 'SEMANTIC_SPINDLE_NOT_SETTLED');
+    // Changed while running, then straight into a cut: advised, at the S line.
+    expect(advice('M3 S10000\nF500\nS16000\nG1 X10')).toMatchObject([{ line: 3 }]);
+    // A rapid in between still needs it: the cut starts at the new speed's ramp.
+    expect(advice('M3 S10000\nF500\nS16000\nG0 Z5\nG1 X10')).toHaveLength(1);
+    // A dwell settles it; starting from stopped the controller waits itself.
+    expect(advice('M3 S10000\nF500\nS16000\nG4 P2000\nG1 X10')).toEqual([]);
+    expect(advice('F500\nS16000 M3\nG1 X10')).toEqual([]);
+    expect(advice('M3 S10000\nF500\nS10000\nG1 X10')).toEqual([]);
+    // Not a LinuxCNC concern here.
+    expect(codes('M3 S10000\nF500\nS16000\nG1 X10', { dialect: LINUXCNC })).toEqual([]);
+  });
+
+  it('draws an arc beyond the tested 0.5 mm mismatch, with a warning, not a refusal', () => {
+    const r = run('F100\nG0 X10\nG2 X-11 Y0 I-10 J0', masso);
+    expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_ARC_RADIUS_MISMATCH_UNTESTED']);
+    expect(r.steps.at(-1)).toMatchObject({ kind: 'arc', endRadius: 11 });
   });
 });

@@ -101,6 +101,18 @@ type StepKind =
       readonly flood: boolean;
     }
   | { readonly kind: 'pause'; readonly line: number; readonly optional: boolean }
+  /**
+   * Waiting for a machine input (Masso M66). Its time is unknown: up to the timeout,
+   * or until the input changes. `skipLines` are the lines the controller skips if the
+   * input condition is met; the preview draws them, as if it wasn't.
+   */
+  | {
+      readonly kind: 'wait';
+      readonly line: number;
+      readonly input: number | null;
+      readonly timeoutSeconds: number | null;
+      readonly skipLines: number;
+    }
   /** An operator message (Masso MSG line, LinuxCNC (MSG, …) comment). '' clears it. */
   | {
       readonly kind: 'message';
@@ -133,6 +145,15 @@ export interface InterpretOptions {
    * synchronous: fetch asynchronously beforehand if needed.
    */
   readonly resolveProgram?: (request: ProgramRequest) => string | undefined;
+  /**
+   * The machine's own positions, in machine coordinates (mm), for controllers that go
+   * to them (Masso G28/G30, parcel 2e-2). Missing axes: `home` defaults to the machine
+   * origin; an unknown `park` is reported and the move isn't drawn.
+   */
+  readonly machine?: {
+    readonly home?: Partial<Position>;
+    readonly park?: Partial<Position>;
+  };
   /** Safety caps for untrusted input. Hitting one stops the run with an error. */
   readonly limits?: Partial<InterpretLimits>;
 }
@@ -186,6 +207,7 @@ export interface ModalState {
   readonly distance: 'absolute' | 'incremental';
   readonly arcDistance: 'absolute' | 'incremental';
   readonly feedMode: 'per-minute' | 'inverse-time' | 'per-revolution';
+  /** 1-9: G54-G59.3. 101-200: G54.1 P1-P100 (Masso's extended offsets). */
   readonly coordinateSystem: number;
   readonly cutterCompensation: 'off' | 'left' | 'right';
   readonly toolLengthOffset: boolean;
