@@ -65,6 +65,9 @@ jobs:
         run: node tools/golden-legacy.cjs --check
       - name: Legacy harness tests (smoke + plan §2.4 reference values)
         run: node --test 'tools/**/*.test.cjs'
+      - name: Playground smoke tests (real browser, the runner's preinstalled Chrome)
+        # The playground was built (and its MIT notice checked) by the Build step.
+        run: pnpm --filter @woodpatch/gcode-playground e2e
       - name: Licence notice survives into packages and minified bundles
         run: pnpm licence:packages
       - name: Parity ledger (every difference from upstream explained, ADR-0025)
@@ -115,3 +118,33 @@ jobs:
       - name: DCO sign-off on every PR commit
         if: github.event_name == 'pull_request'
         run: .github/ci/check-dco.sh "$BASE_SHA" "$HEAD_SHA"
+
+  # ── Publish the playground (pushes to main only, after every check passes) ──
+  deploy-playground:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [checks, reuse, provenance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The only job that can write, and only to push the built site (ADR-0028).
+    permissions:
+      contents: write
+    concurrency:
+      group: deploy-site
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        run: |
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "${GITHUB_SHA}"
+          git checkout -q --detach "${GITHUB_SHA}"
+      - name: Toolchain (Node + pnpm, hash-pinned)
+        run: .github/ci/setup-toolchain.sh
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Deploy the playground to the 'site' branch (GitHub Pages)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: .github/ci/deploy-site.sh apps/playground/dist
