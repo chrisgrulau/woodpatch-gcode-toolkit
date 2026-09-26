@@ -298,3 +298,28 @@ describe('editing', () => {
     expect(() => editLine(line, [{ span: { start: 0, end: 1 }, text: '\n' }])).toThrow(RangeError);
   });
 });
+
+describe('signed values (LinuxCNC read_real_value)', () => {
+  const values = (src: string) =>
+    (parse(src).lines[0]?.tokens ?? []).flatMap((t) =>
+      t.kind === 'word' && t.value
+        ? [`${t.letter}:${t.value.kind}:${src.slice(t.value.span.start, t.value.span.end)}`]
+        : [],
+    );
+
+  it('reads a sign before a parameter, bracket or function as part of an expression', () => {
+    expect(values('X-#1 Y+[2*3] Z-SIN[30] A- #<d> B--#2')).toEqual([
+      'X:expression:-#1',
+      'Y:expression:+[2*3]',
+      'Z:expression:-SIN[30]',
+      'A:expression:- #<d>',
+      'B:expression:--#2',
+    ]);
+    expect(parse('X-#1 Y+[2*3]').diagnostics).toEqual([]);
+  });
+
+  it('still reads a sign before digits as a number, and a lone sign as no value', () => {
+    expect(values('X-1.5 Y+ 2')).toEqual(['X:number:-1.5', 'Y:number:+ 2']);
+    expect(parse('X-Y1').diagnostics.map((d) => d.code)).toContain('SYNTAX_MISSING_VALUE');
+  });
+});
