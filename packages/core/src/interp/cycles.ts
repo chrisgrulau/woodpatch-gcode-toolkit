@@ -83,7 +83,10 @@ export function cycleOps(c: CycleInput): CycleOp[] {
         // for (depth = r - delta; depth > bottom; depth -= delta):
         //   feed to depth; rapid to r; rapid to depth + clearance
         const q = c.peck ?? 0;
-        for (let d = c.r - q; d > c.bottom; d -= q) {
+        // Bounded by the peck count as well as the depth: the interpreter has already
+        // refused a count over its limit, and this guarantees termination regardless.
+        const max = Math.ceil((c.r - c.bottom) / q);
+        for (let d = c.r - q, k = 0; d > c.bottom && k < max; d -= q, k++) {
           feed(d);
           rapid(x, y, c.r);
           rapid(x, y, d + c.g83Clearance);
@@ -95,7 +98,8 @@ export function cycleOps(c: CycleInput): CycleOp[] {
         // for (depth = r - delta; depth > bottom; depth -= delta):
         //   feed to depth; rapid up by the retract
         const q = c.peck ?? 0;
-        for (let d = c.r - q; d > c.bottom; d -= q) {
+        const max = Math.ceil((c.r - c.bottom) / q);
+        for (let d = c.r - q, k = 0; d > c.bottom && k < max; d -= q, k++) {
           feed(d);
           rapid(x, y, d + c.g73Retract);
         }

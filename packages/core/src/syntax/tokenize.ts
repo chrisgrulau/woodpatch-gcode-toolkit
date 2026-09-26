@@ -345,6 +345,21 @@ class LineScanner {
       return span ? { kind: 'expression', span } : null;
     }
     if (isLetter(c)) return this.functionCall();
+    if (c === 0x2b /* + */ || c === 0x2d /* - */) {
+      // A sign before a parameter, bracket or function: X-#1, X-[#2*2], X+SIN[30].
+      // LinuxCNC's read_real_value negates the value that follows (parcel 2c-3 found
+      // this gap; subroutine code uses it constantly). A sign before digits is a number.
+      let k = start + 1;
+      while (k < this.text.length && isWs(this.text.charCodeAt(k))) k++;
+      const next = this.text.charCodeAt(k);
+      if (next === 0x5b || next === 0x23 || isLetter(next) || next === 0x2b || next === 0x2d) {
+        this.i = start + 1;
+        const inner = this.value();
+        if (inner) return { kind: 'expression', span: { start, end: inner.span.end } };
+        this.i = start;
+        return null;
+      }
+    }
     return this.number();
   }
 
