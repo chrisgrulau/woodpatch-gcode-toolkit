@@ -108,3 +108,32 @@ test('a file dropped on the editor opens once, through the capped path', async (
   await expect(page.locator('.cm-content')).toContainText('(DROPPED)');
   expect(problems).toEqual([]);
 });
+
+/** WCAG relative luminance of an `rgb(…)`/`rgba(…)` colour. */
+function luminance(css: string): number {
+  const [r, g, b] = (css.match(/[\d.]+/g) ?? []).slice(0, 3).map((v) => {
+    const c = Number(v) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
+}
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+};
+
+test('the editor is readable on the dark page (text was once black on black)', async ({ page }) => {
+  const problems = watch(page);
+  await page.goto('/');
+  await expect(status(page)).toContainText('Read in', { timeout: 30_000 });
+  const bg = await page.locator('.cm-editor').evaluate((e) => getComputedStyle(e).backgroundColor);
+  // Plain text, a position word, and a comment all meet WCAG AA against it.
+  for (const sel of ['.cm-content', '.gc-axis', '.gc-comment']) {
+    const fg = await page
+      .locator(sel)
+      .first()
+      .evaluate((e) => getComputedStyle(e).color);
+    expect(contrast(fg, bg), `${sel}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+  }
+  expect(problems).toEqual([]);
+});
