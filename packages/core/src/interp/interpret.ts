@@ -141,6 +141,17 @@ interface Frame {
   repeats: Map<number, number> | null;
   /** M98 L: further runs of this subprogram after the current one. */
   m98Left: number;
+  /** A first `%` was seen in this frame's file (the second one ends the program). */
+  percentSeen: boolean;
+}
+
+/** LinuxCNC round_to_int: std::nearbyint, which rounds halves to even (2.5 → 2). */
+function nearbyint(x: number): number {
+  const f = Math.floor(x);
+  const d = x - f;
+  if (d < 0.5) return f;
+  if (d > 0.5) return f + 1;
+  return f % 2 === 0 ? f : f + 1;
 }
 
 /** LinuxCNC: `o<name> call` passes up to 30 arguments as #1-#30. */
@@ -190,7 +201,6 @@ class Interpreter {
   private ended = false;
   /** A hard stop: broken O-word structure or a safety limit. */
   private stopped = false;
-  private percentSeen = false;
 
   // Subprograms and flow (parcel 2c-3).
   private readonly resolve: ((request: ProgramRequest) => string | undefined) | undefined;
@@ -203,6 +213,13 @@ class Interpreter {
   private readonly files = new Map<string, Loaded | null>();
   private iterations = 0;
   private blocks = 0;
+  /**
+   * Sub definitions already recorded, by program and line index: LinuxCNC's offset
+   * table (control_save_offset). Flow reaching one again is an error.
+   */
+  private readonly savedSubs = new Map<Loaded, Set<number>>();
+  /** Diagnostics dropped after `limits.maxDiagnostics`. */
+  private suppressed = 0;
   /** An M98 or M99 on the current line, run after the rest of it. */
   private pendingCall: { readonly p: Word | undefined; readonly l: Word | undefined } | null = null;
   private pendingReturn = false;
@@ -215,6 +232,9 @@ class Interpreter {
     this.resolve = options.resolveProgram;
     this.limits = { ...DEFAULT_LIMITS, ...options.limits };
     this.numbered.set(5220, 1);
+    // Predefined, read-only (LinuxCNC): the last subroutine's return value.
+    this.globalNamed.set('_value', 0);
+    this.globalNamed.set('_value_returned', 0);
     this.params = {
       numbered: (i) => this.numbered.get(i) ?? 0,
       named: (n) => (n.startsWith('_') ? this.globalNamed : this.frame.named).get(n),
@@ -231,6 +251,7 @@ class Interpreter {
       named: new Map(),
       repeats: null,
       m98Left: 0,
+      percentSeen: false,
     };
     this.frames.push(main);
     this.frame = main;
@@ -248,13 +269,20 @@ class Interpreter {
       }
     }
     if (skippedAfterEnd > 0) {
-      this.diagnostics.push({
+      this.add({
         severity: 'info',
         code: 'SEMANTIC_AFTER_PROGRAM_END',
         message: `${skippedAfterEnd} line(s) after the program end were not run`,
         line: firstSkipped,
       });
     }
+    if (this.suppressed > 0)
+      this.diagnostics.push({
+        severity: 'info',
+        code: 'SEMANTIC_DIAGNOSTICS_TRUNCATED',
+        message: `${this.suppressed} further diagnostic(s) not kept (limit ${this.limits.maxDiagnostics})`,
+        line: 0,
+      });
     return { steps: this.steps, diagnostics: this.diagnostics, state: this.state() };
   }
 
@@ -281,6 +309,10 @@ class Interpreter {
           const d0 = this.diagnostics.length;
           this.line(line, f.pc - 1);
           this.attribute(s0, d0, file);
+        }
+        if (this.steps.length > this.limits.maxSteps) {
+          this.stop(line.lineNo, 'SEMANTIC_LIMIT_STEPS', `more than ${this.limits.maxSteps} steps`);
+          return;
         }
         if (this.ended || this.stopped) return;
         if (this.frame !== f) break;
@@ -334,8 +366,9 @@ class Interpreter {
     }
 
     if (tokens[0]?.kind === 'percent') {
-      if (this.percentSeen) this.end(n, '%');
-      this.percentSeen = true;
+      // Per file: a %-wrapped subprogram file must not end the whole run.
+      if (this.frame.percentSeen) this.end(n, '%');
+      this.frame.percentSeen = true;
       return;
     }
     if (tokens[0]?.kind === 'block-delete' && this.blockDelete) {
@@ -819,12 +852,13 @@ class Interpreter {
       return;
     }
     if (op.extraWords) {
-      this.report(
+      // LinuxCNC 2.9 read_o: "nothing is allowed except comments".
+      this.stop(
         n,
-        'warning',
         'SEMANTIC_OWORD_EXTRA_WORDS',
-        'Other words on an O-word line are ignored (their meaning is undefined in LinuxCNC)',
+        'only comments may follow an O-word and its [arguments] ("Unexpected character after O-word")',
       );
+      return;
     }
     const lines = f.program.lines;
     switch (op.kind) {
@@ -832,10 +866,24 @@ class Interpreter {
       case 'do':
       case 'endif':
         return;
-      case 'sub':
+      case 'sub': {
         // Reached in sequence, this is a definition: its body runs only when called.
+        // Reaching one already recorded (by an earlier pass, or a forward call) is
+        // LinuxCNC's "sub ... found in illegal location" (control_save_offset).
+        const saved = this.savedSubs.get(f.program) ?? new Set<number>();
+        this.savedSubs.set(f.program, saved);
+        if (saved.has(index)) {
+          this.stop(
+            n,
+            'SEMANTIC_OWORD_SUB_ILLEGAL_LOCATION',
+            `the definition of o${op.label} is reached again after it was defined or called`,
+          );
+          return;
+        }
+        saved.add(index);
         f.pc = op.target + 1;
         return;
+      }
       case 'call':
         this.call(line, op);
         return;
@@ -862,7 +910,10 @@ class Interpreter {
       }
       case 'elseif':
       case 'else':
-        // Reached in sequence: the branch before it ran, so the chain is done.
+        // Reached in sequence: the branch before it ran, so the chain is done. LinuxCNC
+        // still evaluates an elseif's condition here (read_o skips evaluation only for
+        // other labels), so one that can't be evaluated stops the run.
+        if (op.kind === 'elseif' && this.condition(line, op) === null) return;
         f.pc = op.end + 1;
         return;
       case 'while': {
@@ -882,7 +933,8 @@ class Interpreter {
       }
       case 'repeat': {
         // Only reached on entry: endrepeat jumps back past it. The count is read once
-        // and rounded (LinuxCNC round_to_int); zero or less skips the body.
+        // and rounded half to even (LinuxCNC round_to_int is nearbyint); zero or less
+        // skips the body.
         const arg = op.args[0];
         if (!arg) {
           this.stop(n, 'SEMANTIC_OWORD_NO_ARGUMENT', `o${op.label} repeat needs a count, e.g. [5]`);
@@ -893,7 +945,7 @@ class Interpreter {
           this.stop(n, 'SEMANTIC_FLOW_STOPPED', 'the repeat count could not be evaluated');
           return;
         }
-        const count = Math.round(v);
+        const count = nearbyint(v);
         if (count <= 0) f.pc = op.end + 1;
         else (f.repeats ??= new Map()).set(index, count - 1);
         return;
@@ -906,9 +958,15 @@ class Interpreter {
         } else f.repeats?.delete(op.target);
         return;
       }
-      case 'break':
+      case 'break': {
+        // A do loop's closing while is still read, so its condition is evaluated.
+        const loop = this.flowOf(f.program).ops[op.target];
+        const close = this.flowOf(f.program).ops[op.end];
+        if (loop?.kind === 'do' && close && this.condition(lines[op.end] as Line, close) === null)
+          return;
         f.pc = op.end + 1;
         return;
+      }
       case 'continue': {
         // A while re-tests at its top; a do tests at its closing while.
         // (The do's closing while counts its own iteration; a while's top does not.)
@@ -926,7 +984,7 @@ class Interpreter {
     const flow = buildFlowIndex(program.lines);
     program.flow = flow;
     for (const d of flow.diagnostics)
-      this.diagnostics.push(program.name === null ? d : { ...d, file: program.name });
+      this.add(program.name === null ? d : { ...d, file: program.name });
     for (const [label, def] of flow.subs) {
       if (!this.subs.has(label)) this.subs.set(label, { program, def });
     }
@@ -966,7 +1024,7 @@ class Interpreter {
     return false;
   }
 
-  /** Whether one more call level is allowed; reports why not. */
+  /** Whether one more call level is allowed; stops the run if not (the controller aborts). */
   private canNest(n: number, what: string): boolean {
     const depth = this.frames.length; // the new frame's depth below the main program
     const dialect = this.behaviour.subprograms.maxCallDepth;
@@ -979,11 +1037,10 @@ class Interpreter {
       return false;
     }
     if (depth > dialect) {
-      this.report(
+      this.stop(
         n,
-        'error',
         'SEMANTIC_CALL_TOO_DEEP',
-        `${what} would nest calls ${depth} deep; this controller allows ${dialect}, so the program fails here on the machine. Call not run`,
+        `${what} would nest calls ${depth} deep; this controller allows ${dialect}, so the program fails here on the machine`,
       );
       return false;
     }
@@ -993,16 +1050,16 @@ class Interpreter {
   /** `o<label> call [a] [b] …` (LinuxCNC `execute_call`, CT_NGC_OWORD_SUB). */
   private call(line: Line, op: FlowOp): void {
     const n = line.lineNo;
+    // A failed call aborts the program on the controller (LinuxCNC 2.9), so it stops
+    // the run: drawing on would show a path the machine won't take.
     const sub = this.findSub(op.label, n);
-    if (!sub) return;
+    if (!sub) {
+      this.stopped = true;
+      return;
+    }
     if (!this.canNest(n, `o${op.label} call`)) return;
     if (op.args.length > SUB_PARAMS) {
-      this.report(
-        n,
-        'error',
-        'SEMANTIC_CALL_ARGUMENTS',
-        `A call takes at most ${SUB_PARAMS} arguments; call not run`,
-      );
+      this.stop(n, 'SEMANTIC_CALL_ARGUMENTS', `a call takes at most ${SUB_PARAMS} arguments`);
       return;
     }
     // Arguments are evaluated in the caller, before anything changes.
@@ -1010,23 +1067,21 @@ class Interpreter {
     for (const a of op.args) {
       const v = this.value(line, a);
       if (v === null) {
-        this.report(
-          n,
-          'error',
-          'SEMANTIC_LINE_NOT_RUN',
-          'Call not run: an argument could not be evaluated',
-        );
+        this.stop(n, 'SEMANTIC_FLOW_STOPPED', 'a call argument could not be evaluated');
         return;
       }
       args.push(v);
     }
-    // #1-#30 are local: save the caller's, pass the arguments; the rest keep the
-    // caller's values. The previous return value is cleared.
+    // #1-#30 are local: save the caller's, pass the arguments, and ZERO the rest
+    // (LinuxCNC 2.9 read_o: "zero the remaining params"; execute_call copies all 30).
+    // So `o<sub> if [#3 EQ 0]` reliably detects an argument that wasn't passed.
     const saved: number[] = [];
     for (let i = 1; i <= SUB_PARAMS; i++) saved.push(this.numbered.get(i) ?? 0);
-    args.forEach((v, k) => this.numbered.set(k + 1, v));
-    this.globalNamed.set('_value', 0);
-    this.globalNamed.set('_value_returned', 0);
+    for (let k = 0; k < SUB_PARAMS; k++) this.numbered.set(k + 1, args[k] ?? 0);
+    // Recorded in the offset table: flow reaching the definition later is an error.
+    const saved2 = this.savedSubs.get(sub.program) ?? new Set<number>();
+    saved2.add(sub.def.start);
+    this.savedSubs.set(sub.program, saved2);
     this.enter({
       program: sub.program,
       pc: sub.def.start + 1,
@@ -1036,6 +1091,7 @@ class Interpreter {
       named: new Map(),
       repeats: null,
       m98Left: 0,
+      percentSeen: false,
     });
   }
 
@@ -1046,14 +1102,20 @@ class Interpreter {
       this.stop(n, 'SEMANTIC_FLOW_STOPPED', `o${op.label} ${op.kind} outside a subroutine call`);
       return;
     }
+    // LinuxCNC 2.9 read_o: a value sets #<_value> and #<_value_returned>; no value
+    // zeroes both.
     const arg = op.args[0];
+    let v = 0;
     if (arg) {
-      const v = this.value(line, arg);
-      if (v !== null) {
-        this.globalNamed.set('_value', v);
-        this.globalNamed.set('_value_returned', 1);
+      const r = this.value(line, arg);
+      if (r === null) {
+        this.stop(n, 'SEMANTIC_FLOW_STOPPED', 'the return value could not be evaluated');
+        return;
       }
+      v = r;
     }
+    this.globalNamed.set('_value', v);
+    this.globalNamed.set('_value_returned', arg ? 1 : 0);
     this.leave();
   }
 
@@ -1094,7 +1156,11 @@ class Interpreter {
     if (runs === 0) return; // M98 L0: the subprogram is not run
     const name = String(num);
     const program = this.load('m98', name, n);
-    if (!program) return;
+    if (!program) {
+      // Masso: "an error message is displayed and the program enters Feed Hold".
+      this.stopped = true;
+      return;
+    }
     if (!this.canNest(n, `M98 P${name}`)) return;
     // Loop passes after the first count against the iteration limit up front.
     if (runs - 1 > this.limits.maxLoopIterations - this.iterations) {
@@ -1112,10 +1178,12 @@ class Interpreter {
       kind: 'm98',
       label: name,
       saved: null,
-      // Parameters are global across M98 calls (LinuxCNC; Masso has none).
-      named: this.frame.named,
+      // #1-#30 are shared with the caller (M98 doesn't save them); named locals are
+      // fresh, as in LinuxCNC 2.9 (Masso has no parameters at all).
+      named: new Map(),
       repeats: null,
       m98Left: runs - 1,
+      percentSeen: false,
     });
   }
 
@@ -1135,7 +1203,7 @@ class Interpreter {
       n,
       'warning',
       'SEMANTIC_M99_IN_MAIN',
-      'M99 in the main program: the controller may restart the program endlessly; drawn once',
+      'M99 in the main program: drawn as the program end (LinuxCNC ends there unless set to loop; untested on Masso)',
     );
     this.end(n, 'M99');
   }
@@ -1203,7 +1271,7 @@ class Interpreter {
       return null;
     }
     const parsed = parse(text);
-    for (const d of parsed.diagnostics) this.diagnostics.push({ ...d, file: name });
+    for (const d of parsed.diagnostics) this.add({ ...d, file: name });
     const loaded: Loaded = { name, lines: parsed.lines, flow: null };
     this.files.set(key, loaded);
     return loaded;
@@ -1458,6 +1526,22 @@ class Interpreter {
     const bottom = incremental ? r + z0 : z0 + offset.Z;
     if (r < bottom)
       return fail('SEMANTIC_CYCLE_R_BELOW_Z', 'R (retract plane) is below Z (hole bottom)');
+
+    // G73/G83: the number of pecks is known up front. Refuse the line rather than loop
+    // (reviewer, toolkit #12: with a tiny Q, d -= Q stops changing d and never ends).
+    const pecks = q !== null ? Math.ceil((r - bottom) / q) : 1;
+    if (!(pecks <= this.limits.maxPecks)) {
+      return fail(
+        'SEMANTIC_CYCLE_TOO_MANY_PECKS',
+        `${code} would take ${Number.isFinite(pecks) ? pecks : 'endless'} pecks per hole (Q is too small for the depth; limit ${this.limits.maxPecks})`,
+      );
+    }
+    // The steps this line adds (up to 3 per peck, plus 5 around each hole), checked
+    // against the step limit before anything is built.
+    if (this.steps.length + repeats * (pecks * 3 + 5) > this.limits.maxSteps) {
+      this.stop(n, 'SEMANTIC_LIMIT_STEPS', `more than ${this.limits.maxSteps} steps`);
+      return;
+    }
 
     const holes: { x: number; y: number }[] = [];
     let hx = pos.X;
@@ -1739,10 +1823,10 @@ class Interpreter {
   private value(line: Line, v: Value): number | null {
     if (v.kind === 'number') return v.value;
     const parsed = parseExpression(line.text, v.span, line.lineNo, this.rules);
-    this.diagnostics.push(...parsed.diagnostics);
+    for (const d of parsed.diagnostics) this.add(d);
     if (!parsed.expr) return null;
     const r = evaluate(parsed.expr, this.params, this.rules, line.lineNo);
-    this.diagnostics.push(...r.diagnostics);
+    for (const d of r.diagnostics) this.add(d);
     return r.value;
   }
 
@@ -1752,6 +1836,10 @@ class Interpreter {
     const nameMatch = /^#<(.*)>$/.exec(t);
     if (nameMatch) {
       const name = (nameMatch[1] ?? '').toLowerCase();
+      if (name === '_value' || name === '_value_returned') {
+        this.report(line.lineNo, 'error', 'SEMANTIC_BAD_ASSIGNMENT', `#<${name}> is read-only`);
+        return;
+      }
       (name.startsWith('_') ? this.globalNamed : this.frame.named).set(name, value);
       return;
     }
@@ -1787,9 +1875,16 @@ class Interpreter {
     message: string,
     span?: Span,
   ): void {
-    this.diagnostics.push(
-      span ? { severity, code, message, line, span } : { severity, code, message, line },
-    );
+    this.add(span ? { severity, code, message, line, span } : { severity, code, message, line });
+  }
+
+  /**
+   * Every diagnostic goes through here. After `limits.maxDiagnostics` they're counted,
+   * not kept: a warning inside a million-pass loop mustn't exhaust memory.
+   */
+  private add(d: Diagnostic): void {
+    if (this.diagnostics.length < this.limits.maxDiagnostics) this.diagnostics.push(d);
+    else this.suppressed++;
   }
 
   private reportOnce(line: number, severity: Severity, code: string, message: string): void {

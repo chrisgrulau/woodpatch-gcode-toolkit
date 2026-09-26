@@ -588,8 +588,8 @@ It also needs D read as the peck distance on G73/G83; today D there is an unused
 
 - They agree on everything this ADR relies on: control-flow labels scoped per sub
   (`sub#label` in `read_o`), #1–#30 handling, and named-parameter scoping.
-- The call limit is the same 9. 2.9 checks `call_level >= 10` after incrementing, and
-  master checks `call_level + 1 >= 10` before.
+- The call limit is the same 9. 2.9 increments `call_level` and then refuses at 10;
+  master checks `call_level + 1 >= 10` before incrementing.
 - Master adds checks this doesn't depend on: stricter nested-definition errors inside a
   called file, and no forward-seek in a called file.
 
@@ -606,22 +606,42 @@ source and the docs (`o-code.adoc`) differ. Which one a controller has is dialec
 - **Scope:** subroutine labels are global across all loaded files. Control-flow labels
   are local to the subroutine body, or the main program, they're in. Labels are
   normalised: `o0100` is `o100`, and `<My Sub>` is `<mysub>`.
-- **Calls:** up to 30 arguments go into #1–#30. Unpassed ones keep the caller's values,
-  and the caller's #1–#30 are restored on return. Parameters above #30 are global.
+- **Calls:** up to 30 arguments go into #1–#30, and **the unpassed ones are zeroed**.
+  2.9's `read_o` says "zero the remaining params", and `execute_call` copies all 30, so
+  `o<sub> if [#3 EQ 0]` reliably detects a missing argument. The caller's #1–#30 are
+  restored on return. Parameters above #30 are global. _Corrected in review: the first
+  cut kept the caller's values (reviewer, toolkit #12)._
 - **Named parameters** are local to a call unless their name starts with `_`. That was
   already true of the main program.
-- **Return values:** `endsub [v]` or `return [v]` sets `#<_value>` and
-  `#<_value_returned>`. Both are cleared at the next call.
-- **Truth:** a condition is true when non-zero. A `repeat` count is rounded, and 0 or
-  less skips the body.
+- **Return values:** `endsub [v]` or `return [v]` sets `#<_value>` to v and
+  `#<_value_returned>` to 1. With no value, both are set to 0 (2.9 `read_o`). They are
+  not cleared at a call. Both are predefined (0 before any call) and read-only.
+- **Truth:** a condition is true when non-zero. An `elseif` is evaluated whenever
+  it's reached, even after an earlier branch ran: `read_o` skips evaluation only for
+  other labels, so `[1/0]` there stops the run. A do loop's closing `while` is still
+  evaluated after `break`.
+- **A `repeat` count rounds half to even** (`round_to_int` is `nearbyint`), so
+  `[2.5]` is 2 passes. 0 or less skips the body.
 - **Forward calls:** a sub may be called before its definition in the main program. The
   docs forbid it; the source allows it (`control_back_to` step 3).
-- **Definitions are skipped** in normal flow and run only when called.
-- **Structure errors stop the run,** as LinuxCNC aborts: carrying on would run code that
-  should be skipped, or skip code that should run. They are nested definitions,
-  unmatched or reused labels, `else` after `else`, unclosed blocks, and `break`/`continue`
-  outside a while or do loop. So do a missing or unevaluable condition, and an M99 ending
-  an O-word sub.
+- **Definitions are skipped** in normal flow and run only when called. Flow reaching a
+  definition already recorded is an error, and the run stops. That covers a definition
+  after a forward call to it, or one inside a loop: 2.9's `control_save_offset` gives
+  "sub … found in illegal location".
+- **Other words on an O-word line are an error,** and the run stops. 2.9's `read_o`
+  allows "nothing … except comments": "Unexpected character after O-word".
+- **A failed call stops the run,** because 2.9 aborts: a subroutine that can't be
+  found, a call nested too deep, more than 30 arguments, or an argument that can't be
+  evaluated. Drawing on would show a path the machine won't take. _Corrected in review;
+  the first cut skipped the call and carried on._
+- **Structure errors stop the run.** Carrying on would run code that should be
+  skipped, or skip code that should run. The errors are nested definitions, unmatched
+  or reused labels, `else` after `else`, unclosed blocks, and `break`/`continue` outside
+  a while or do loop. So does a missing or unevaluable condition, and an M99 ending an
+  O-word sub.
+- **Where we're stricter than 2.9:** it lets some of these pass, such as `else` after
+  `else`, an unclosed `if` whose branch is true, and a `return` with the wrong label. A
+  preview that flags them is on the safe side.
 - **Not yet interpreted:** `o[expr]` label indirection, which the tokenizer doesn't
   read, and Python O-word subs.
 
@@ -633,28 +653,34 @@ source and the docs (`o-code.adoc`) differ. Which one a controller has is dialec
 - LinuxCNC `o<name> call` asks for `o-word:<name>` and runs that file's `o<name> sub`.
 - Masso `M98 P<n>` asks for `m98:<n>`: the number with no leading zeros, which is the
   Masso rule for file names.
-- A missing file, or a resolver that throws, is reported, and the call is skipped.
+- A missing file, or a resolver that throws, is reported, and the run stops. That's
+  what a failed call does on both controllers; Masso "enters Feed Hold".
 - Steps and diagnostics from a file carry `file` (the resolver's name) and that file's
   own line numbers. `file` is absent for the main program, so existing consumers see no
   change.
 
 **M98/M99 (Masso).** `M98 P<n> [L<runs>]` runs file n, L times (default once; `L0`
-doesn't run it). #1–#30 are shared with the caller, not saved. The call runs after the
-rest of its line. M99 returns. A file that ends without M99 returns with a warning.
+doesn't run it). #1–#30 are shared with the caller, not saved; named locals start
+fresh, as in 2.9. The call runs after the rest of its line. M99 returns. A file that
+ends without M99 returns with a warning. `%` is tracked per file, so a `%`-wrapped
+subprogram file doesn't end the program.
 
-- In the main program, M99 ends the drawing with a warning. LinuxCNC restarts the program
-  forever.
+- In the main program, M99 ends the drawing with a warning. LinuxCNC ends there unless
+  configured to loop; Masso is untested.
 - Under LinuxCNC rules, `M98 P<n>` means a numbered `O<n>` block in the same file (Fanuc
   style). That's reported as not interpreted yet, and the line is not run.
 
 **Two kinds of limit, reported differently:**
 
-| Limit                      | Whose            | Value                                        | Message                                |
-| -------------------------- | ---------------- | -------------------------------------------- | -------------------------------------- |
-| `subprograms.maxCallDepth` | the controller's | LinuxCNC 9, Masso 5                          | won't run on the machine; call skipped |
-| `limits.maxCallDepth`      | ours (resource)  | 64                                           | stopped: too large to process          |
-| `limits.maxLoopIterations` | ours             | 1,000,000 (while, do, repeat, M98 L)         | stopped                                |
-| `limits.maxBlocks`         | ours             | 20,000,000 (each canned-cycle repeat counts) | stopped                                |
+| Limit                      | Whose            | Value                                         | Message                       |
+| -------------------------- | ---------------- | --------------------------------------------- | ----------------------------- |
+| `subprograms.maxCallDepth` | the controller's | LinuxCNC 9, Masso 5                           | stopped: fails on the machine |
+| `limits.maxCallDepth`      | ours (resource)  | 64                                            | stopped: too large to process |
+| `limits.maxLoopIterations` | ours             | 1,000,000 (while, do, repeat, M98 L)          | stopped                       |
+| `limits.maxBlocks`         | ours             | 20,000,000 (each canned-cycle repeat counts)  | stopped                       |
+| `limits.maxSteps`          | ours             | 2,000,000 steps: this is what bounds memory   | stopped                       |
+| `limits.maxDiagnostics`    | ours             | 10,000; beyond that they're counted, not kept | a closing note                |
+| `limits.maxPecks`          | ours             | 10,000 per G73/G83 hole                       | line refused                  |
 
 - **LinuxCNC's 9:** `INTERP_SUB_ROUTINE_LEVELS` is 10, but it counts the main program.
   `enter_context` refuses when `call_level + 1 >= 10`. A test runs 9 levels and refuses
@@ -664,6 +690,14 @@ rest of its line. M99 returns. A file that ends without M99 returns with a warni
 - The resource limits are `InterpretOptions.limits`, so a server can tighten them.
 - Canned-cycle repeats (`L`/`K`) now count against `maxBlocks` before any motion is
   built, so `G81 … L1000000000` can't exhaust memory.
+- **The G73/G83 peck loop could fail to terminate** (reviewer, toolkit #12; the code
+  came from #11). With a Q below the float resolution of the depth, `d -= Q` stops
+  changing d. The peck count, ceil(depth / Q), is now worked out up front. Over
+  `maxPecks` the line is refused, the loop in `cycles.ts` is also bounded by the count,
+  and the line's steps are checked against `maxSteps` before any are built.
+- `maxSteps` and `maxDiagnostics` close the remaining memory route. A loop body of 19
+  lines over a million iterations would otherwise exhaust memory long before
+  `maxBlocks` tripped.
 
 **Found on the way: a sign before a parameter, bracket or function.** `X-#1`, `X-[…]`,
 `X+SIN[…]` and `X--#1` are values in LinuxCNC (`read_real_value` negates what follows).

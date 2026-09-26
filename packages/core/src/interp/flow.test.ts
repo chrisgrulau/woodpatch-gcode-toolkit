@@ -61,9 +61,14 @@ G0 Y1`;
     expect(xs('o1 if [-1]\nG0 X1\no1 endif')).toEqual([1]);
   });
 
-  it('evaluates later elseif conditions only when reached', () => {
-    // #9 is set in the first branch; the elseif would divide by zero if it were tested.
-    expect(errors('o1 if [1]\nG0 X1\no1 elseif [1/0]\nG0 X2\no1 endif')).toEqual([]);
+  it('evaluates an elseif condition when reached, even after a branch ran (LinuxCNC 2.9)', () => {
+    // read_o skips evaluation only for OTHER labels, so after the if branch runs, the
+    // elseif's condition is still read: a division by zero there stops the run.
+    const src = 'o1 if [1]\nG0 X1\no1 elseif [1/0]\nG0 X2\no1 endif\nG0 X3';
+    expect(errors(src)).toContain('SEMANTIC_FLOW_STOPPED');
+    expect(xs(src)).toEqual([1]);
+    // An elseif that is never reached is never evaluated.
+    expect(errors('o1 if [0]\no1 elseif [1]\nG0 X2\no1 else\no1 endif')).toEqual([]);
   });
 
   it('nests, including the same label in different scopes', () => {
@@ -183,10 +188,11 @@ o100 sub
 o100 endsub
 o100 call [100] [2]
 G0 X#1 Y#3 Z#31`;
-    // #3 was not passed, so it keeps the caller's value inside the sub.
-    // After return, #1 and #3 are the caller's again; #31 (above #30) changed globally.
+    // #3 was not passed, so it is ZERO inside the sub (LinuxCNC 2.9 read_o: "zero the
+    // remaining params"). After return, #1 and #3 are the caller's again; #31 (above
+    // #30) changed globally.
     expect(ends(src)).toEqual([
-      [100, 2, 33],
+      [100, 2, 0],
       [11, 33, 2],
     ]);
   });
@@ -248,8 +254,9 @@ o<r> call [1]`;
   });
 
   it('reports a call to a subroutine that exists nowhere', () => {
+    // A failed call aborts on the controller, so the run stops: nothing after it is drawn.
     expect(codes('o<nope> call\nG0 X1')).toEqual(['SEMANTIC_SUB_NOT_FOUND']);
-    expect(xs('o<nope> call\nG0 X1')).toEqual([1]);
+    expect(xs('o<nope> call\nG0 X1')).toEqual([]);
   });
 
   it('treats a bare O number as a program number', () => {
@@ -257,7 +264,7 @@ o<r> call [1]`;
     expect(xs('O1000\nG0 X1')).toEqual([1]);
   });
 
-  it('warns about other words on an O-word line, and ignores them', () => {
+  it('stops at other words on an O-word line (LinuxCNC: "Unexpected character after O-word")', () => {
     expect(codes('o1 if [1] G0 X5\no1 endif')).toEqual(['SEMANTIC_OWORD_EXTRA_WORDS']);
     expect(xs('o1 if [1] G0 X5\no1 endif')).toEqual([]);
   });
@@ -332,7 +339,7 @@ M2`,
       'SEMANTIC_RESOLVER_FAILED',
       'SEMANTIC_SUB_NOT_FOUND',
     ]);
-    expect(xs('o<x> call\nG0 X1')).toEqual([1]);
+    expect(xs('o<x> call\nG0 X1')).toEqual([]);
   });
 });
 
@@ -535,5 +542,117 @@ describe('R8 fixtures: differs from upstream deliberately', () => {
     const r = run(fixture('r8-program-number.ngc'));
     expect(moves(r.steps).map((s) => s.to.X)).toEqual([10]);
     expect(r.diagnostics).toEqual([]);
+  });
+});
+
+describe('reviewer findings on #12, pinned (LinuxCNC 2.9 source)', () => {
+  it('zeroes unpassed arguments, so a default-argument idiom works', () => {
+    const src = `#2=7
+o1 sub
+  o2 if [#2 EQ 0]
+    #2=5
+  o2 endif
+  G0 X#2
+o1 endsub
+o1 call [1]
+o1 call [1] [9]`;
+    expect(xs(src)).toEqual([5, 9]);
+  });
+
+  it('takes exactly 30 arguments, and refuses 31', () => {
+    const args = (k: number) => Array.from({ length: k }, (_, i) => `[${i + 1}]`).join(' ');
+    const src = (k: number) => `o1 sub\nG0 X#30\no1 endsub\no1 call ${args(k)}\nG0 Y1`;
+    expect(xs(src(30))).toEqual([30, 30]);
+    expect(errors(src(31))).toEqual(['SEMANTIC_CALL_ARGUMENTS']);
+    expect(xs(src(31))).toEqual([]);
+  });
+
+  it('rounds a repeat count half to even (nearbyint)', () => {
+    const n = (v: string) => xs(`G91\no1 repeat [${v}]\nG0 X1\no1 endrepeat`).length;
+    expect([n('0.5'), n('1.5'), n('2.5'), n('3.5'), n('2.6')]).toEqual([0, 2, 2, 4, 3]);
+  });
+
+  it('zeroes #<_value> on a valueless return, keeps it across calls, and it is read-only', () => {
+    const src = `o1 sub
+  o1 return [42]
+o1 endsub
+o2 sub
+o2 endsub
+G0 X#<_value> Y#<_value_returned>
+o1 call
+G0 X#<_value> Y#<_value_returned>
+o2 call
+G0 X#<_value> Y#<_value_returned>`;
+    expect(ends(src).map(([x, y]) => [x, y])).toEqual([
+      [0, 0],
+      [42, 1],
+      [0, 0],
+    ]);
+    expect(errors('#<_value>=3')).toEqual(['SEMANTIC_BAD_ASSIGNMENT']);
+  });
+
+  it('refuses to reach a definition again after a forward call (illegal location)', () => {
+    const src = 'o<a> call\no<a> sub\nG0 X1\no<a> endsub\nG0 X2';
+    expect(errors(src)).toEqual(['SEMANTIC_OWORD_SUB_ILLEGAL_LOCATION']);
+    expect(xs(src)).toEqual([1]);
+    // Defined first, then called: fine.
+    expect(errors('o<a> sub\nG0 X1\no<a> endsub\no<a> call\nG0 X2')).toEqual([]);
+    // A definition inside a loop is reached twice: illegal.
+    expect(
+      errors('#1=0\no9 while [#1 LT 2]\n#1=[#1+1]\no<a> sub\no<a> endsub\no9 endwhile'),
+    ).toEqual(['SEMANTIC_OWORD_SUB_ILLEGAL_LOCATION']);
+  });
+
+  it('evaluates a do loop\u2019s closing while after break', () => {
+    expect(errors('o1 do\no1 break\no1 while [1/0]\nG0 X1')).toContain('SEMANTIC_FLOW_STOPPED');
+    expect(errors('o1 do\no1 break\no1 while [1]\nG0 X1')).toEqual([]);
+  });
+
+  it('stops a do-while at the iteration limit', () => {
+    expect(errors('o1 do\nG0 X1\no1 while [1]', { limits: { maxLoopIterations: 20 } })).toEqual([
+      'SEMANTIC_LIMIT_ITERATIONS',
+    ]);
+  });
+
+  it('stops at the step limit, and keeps a bounded number of diagnostics', () => {
+    const loop = 'o1 while [1]\nG0 X1\nG0 X2\no1 endwhile';
+    const r = run(loop, { limits: { maxSteps: 100, maxLoopIterations: 1e9 } });
+    expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_LIMIT_STEPS']);
+    expect(r.steps.length).toBeLessThanOrEqual(102);
+    const noisy = run('#1=0\no1 while [#1 LT 500]\nG0 X1 Q1\n#1=[#1+1]\no1 endwhile', {
+      limits: { maxDiagnostics: 50 },
+    });
+    expect(noisy.diagnostics).toHaveLength(51);
+    expect(noisy.diagnostics.at(-1)).toMatchObject({ code: 'SEMANTIC_DIAGNOSTICS_TRUNCATED' });
+  });
+
+  it('refuses a G83/G73 with too many pecks at once, instead of looping (was endless)', () => {
+    const t = performance.now();
+    expect(errors('G0 Z5\nG83 X0 Z-1 R1000000 Q0.00000000001 F100')).toEqual([
+      'SEMANTIC_CYCLE_TOO_MANY_PECKS',
+    ]);
+    expect(errors('G0 Z5\nG73 X0 Z-1000 R1 Q0.001 F100')).toEqual([
+      'SEMANTIC_CYCLE_TOO_MANY_PECKS',
+    ]);
+    expect(performance.now() - t).toBeLessThan(1000);
+    // A normal deep peck still works.
+    expect(errors('G0 Z5\nG83 X0 Z-100 R1 Q0.5 F100')).toEqual([]);
+  });
+
+  it('bounds a huge M98 L by the iteration limit', () => {
+    expect(
+      errors('M98 P1 L1000000000', {
+        interpreterRules: MASSO_LIKE,
+        resolveProgram: files({ '1': 'G0 X1\nM99' }),
+      }),
+    ).toEqual(['SEMANTIC_LIMIT_ITERATIONS']);
+  });
+
+  it('treats % per file: a %-wrapped subprogram file does not end the program', () => {
+    const r = run('%\nM98 P1\nG0 X2\n%', {
+      interpreterRules: MASSO_LIKE,
+      resolveProgram: files({ '1': '%\nG0 X1\nM99\n%' }),
+    });
+    expect(moves(r.steps).map((s) => s.to.X)).toEqual([1, 2]);
   });
 });

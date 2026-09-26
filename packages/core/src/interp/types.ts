@@ -122,12 +122,28 @@ export interface InterpretLimits {
   readonly maxBlocks: number;
   /** Call nesting, whatever the dialect allows. Default 64. */
   readonly maxCallDepth: number;
+  /**
+   * Steps kept, each a few hundred bytes. This is what bounds memory: a loop can emit
+   * many steps per iteration. Default 2,000,000 (aztec, a 224k-line job, needs 224k).
+   */
+  readonly maxSteps: number;
+  /** Diagnostics kept; beyond this they're counted, not stored. Default 10,000. */
+  readonly maxDiagnostics: number;
+  /**
+   * Pecks in one G73/G83 hole: ceil(depth / Q). Beyond it the line is refused, not
+   * looped. A tiny Q (or one below the float resolution of the depth) would otherwise
+   * never end. Default 10,000 (1 m deep at Q0.1).
+   */
+  readonly maxPecks: number;
 }
 
 export const DEFAULT_LIMITS: InterpretLimits = Object.freeze({
   maxLoopIterations: 1_000_000,
   maxBlocks: 20_000_000,
   maxCallDepth: 64,
+  maxSteps: 2_000_000,
+  maxDiagnostics: 10_000,
+  maxPecks: 10_000,
 });
 
 /** The modal state after the last line: useful for tests, editors and resuming. */

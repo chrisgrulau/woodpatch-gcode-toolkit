@@ -48,7 +48,7 @@ export interface SubprogramRules {
    * The deepest nesting of calls below the main program that the controller allows.
    * A deeper call is an error: the program would fail on the machine.
    * LinuxCNC: 9 (`INTERP_SUB_ROUTINE_LEVELS` is 10 and counts the main program;
-   * `enter_context` refuses when `call_level + 1 >= 10`). Masso: 5 (documented).
+   * 2.9's `enter_context` increments `call_level`, then refuses at 10). Masso: 5 (documented).
    */
   readonly maxCallDepth: number;
 }
