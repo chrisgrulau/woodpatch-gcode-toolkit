@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 export { interpret } from './interpret.js';
-export { G_CODES, M_CODES, codeKey, type CodeInfo } from './codes.js';
+export { G_CODES, LINUXCNC_G, LINUXCNC_M, M_CODES, codeKey, type CodeInfo } from './codes.js';
 export * from './types.js';
 export {
   LINUXCNC_INTERPRETER_RULES,
