@@ -12,6 +12,8 @@ version = 1
 path = [
   "package.json",
   "packages/*/package.json",
+  "apps/*/package.json",
+  "apps/*/tsconfig*.json",
   "pnpm-lock.yaml",
   "tsconfig*.json",
   "packages/*/tsconfig*.json",

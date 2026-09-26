@@ -1146,6 +1146,85 @@ Mutation-checked on the BOM shift and the do→while pairing. View-level behavio
 
 ---
 
+## ADR-0028: The playground: a static site of the viewer and editor, published from `site`
+
+**Status:** Accepted, 2026-09-27. Parcel 3c.
+
+**Decision.** `apps/playground` is the public demo that replaces upstream's simulator
+page. It's a private Vite app in plain TypeScript, with no framework.
+
+- **Layout:** the editor and the 3D view side by side, with diagnostics and stats below.
+- **Opening programs:** drop a file anywhere, open one, paste or type, or pick one of
+  the five reference programs.
+- **Re-reading:** edits are re-read 400 ms after typing stops, in the worker. A newer
+  read cancels the old one.
+- **Controller:** GENERIC by default, with Masso and LinuxCNC one click away
+  (operator, #1171).
+- **Line ↔ path both ways:** the cursor highlights its path; clicking the path marks its
+  line; clicking a diagnostic moves the editor to its line.
+- **Nothing is uploaded.** Public input is capped at 20 MB (plan §4.8) on every path in:
+  opened and dropped files by size, before they're read, and paste, text drops and
+  typing by the document's length (an edit that would pass it is refused). A file dropped
+  on the editor is caught before CodeMirror's own drop handler, which would read it
+  uncapped. Diagnostics and file names reach the page only through `textContent`, never
+  as HTML.
+- **CSP:** `default-src 'self'`, no inline script and no `eval`. The worker is a
+  same-origin file (`worker-src 'self'`, no `blob:`). `style-src` allows inline styles,
+  which CodeMirror's style injection needs.
+- **The MIT notice in the built site** (ADR-0009):
+  - Vite 8 (rolldown) drops legal comments by default. The config keeps them
+    (`output.comments.legal`, for the page and the worker).
+  - `scripts/check-notice.mjs` fails the build unless EVERY chunk containing toolkit code
+    carries the notice in a `/*!` comment. A string that merely mentions the author
+    doesn't count.
+  - Mutation-checked: turning legal comments off fails the build and names both chunks.
+  - The footer credits webgcode and links the licences. The samples ship with a NOTICE
+    for upstream's four programs, which are MIT OR AGPL.
+- **Worker:** the app's `src/worker.ts` is a bare `import '@woodpatch/gcode-viewer/worker'`.
+  That exercises the viewer's `sideEffects` declaration for real.
+
+**Publishing** (operator, #1171):
+
+- CI's `deploy-playground` job runs only on pushes to `main`, after `checks`, `reuse` and
+  `provenance` pass. It's the only job with `contents: write`.
+- It rebuilds and runs `.github/ci/deploy-site.sh`, which commits the built site on top
+  of the `site` branch with plain git: never a force-push, and no third-party actions.
+  Only visible files are published (no dotfiles, no source maps at any depth; the maps
+  are built `hidden`, so no bundle points at one), and `.nojekyll` is added. A failure
+  to read `site` from the remote fails the deploy; only a branch that doesn't exist yet
+  starts a new one.
+- `gh-pages` stays untouched as upstream's fork reference.
+- Pages serving `site` is enabled in repository settings, and `site` has a ruleset
+  blocking force-pushes and deletion, set up before the first deploy.
+- **Accepted risk: the deploy token shares a job with the build.** Install and Build run
+  the locked dependencies in the same job as the push, so a compromised dependency
+  could reach the token (through the job's environment files, `PATH`, or the workspace
+  copy of the script) and publish script on the site's origin. A separate build job
+  would need to pass the build as an artifact, which the no-`uses:` policy rules out
+  (ADR-0006). The frozen lockfile, blocked install scripts and the 7-day release age make
+  it unlikely, and the `site` ruleset limits it to adding commits.
+- The script was tested against a
+  local bare repository: the first deploy creates the branch, an unchanged build is
+  skipped, a change adds a commit, and a missing build fails clearly.
+
+**Testing:** Playwright drives the CI runner's preinstalled Chrome (`channel: 'chrome'`),
+with no browser download (operator, #1171). There's no Chrome on the development box,
+so these run in CI only. The smoke tests cover:
+
+- the default sample loads, the stats appear, and the 3D view draws (its screenshot
+  differs clearly from the empty view's);
+- the Masso sample's diagnostics appear, and clicking one moves the editor's active line;
+- typing a program re-reads it, with the extent checked, arc top included;
+- no page errors or console errors (so no CSP violations) in any test.
+
+Visual-regression screenshots, Lighthouse, the size budget and the 60 fps proxy come
+with 3f.
+
+**Size:** the page is about 258 KB gzipped (three.js, CodeMirror and the toolkit) and the
+worker about 71 KB, inside the plan's 600 KB island budget.
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.

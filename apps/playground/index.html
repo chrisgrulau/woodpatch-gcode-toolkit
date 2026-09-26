@@ -1,0 +1,71 @@
+<!doctype html>
+<!--
+SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
+SPDX-License-Identifier: MIT
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>G-code Playground · Woodpatch G-code Toolkit</title>
+    <meta
+      name="description"
+      content="View, check and explore G-code in your browser: a 3D toolpath, the code with diagnostics, and line-by-line sync. Nothing is uploaded."
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'"
+    />
+    <!-- An empty inline favicon: without one the browser's automatic request 404s. -->
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>G-code Playground</h1>
+      <label class="file">
+        Open…
+        <input id="file" type="file" accept=".nc,.ngc,.gcode,.tap,.txt,text/plain" />
+      </label>
+      <label>
+        Sample
+        <select id="sample">
+          <option value="">—</option>
+          <option value="tux.ngc">Tux</option>
+          <option value="webgcode.ngc">webgcode logo</option>
+          <option value="test_pycam.ngc">PyCAM test</option>
+          <option value="aztec_calendar.ngc">Aztec calendar (224k lines)</option>
+          <option value="masso-dialect-test-v1.nc">Masso dialect test</option>
+        </select>
+      </label>
+      <label>
+        Controller
+        <select id="dialect"></select>
+      </label>
+      <span class="views" role="group" aria-label="View">
+        <button data-view="iso">Iso</button>
+        <button data-view="top">Top</button>
+        <button data-view="front">Front</button>
+        <button data-view="right">Right</button>
+      </span>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </header>
+    <main class="panes">
+      <section id="editor" class="editor" aria-label="G-code"></section>
+      <section id="view" class="view" aria-label="3D toolpath"></section>
+    </main>
+    <section class="info">
+      <div id="stats" class="stats"></div>
+      <ol id="diagnostics" class="diagnostics" aria-label="Diagnostics"></ol>
+    </section>
+    <footer class="foot">
+      Drop a file anywhere, or paste into the editor. Everything runs in your browser; nothing is
+      uploaded. ·
+      <a href="https://github.com/chrisgrulau/woodpatch-gcode-toolkit">Woodpatch G-code Toolkit</a>
+      (MIT) · Based on
+      <a href="https://github.com/nraynaud/webgcode">webgcode</a> by Nicolas Raynaud ·
+      <a href="./samples/NOTICE.txt">Sample licences</a>
+    </footer>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
