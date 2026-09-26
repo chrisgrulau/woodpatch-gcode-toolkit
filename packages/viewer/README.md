@@ -33,3 +33,25 @@ viewer.highlightLine(42);
 - `dispose()` frees the WebGL context too, so views can be mounted and unmounted freely.
 - If you write your own worker file, `import '@woodpatch/gcode-viewer/worker'` is kept
   by bundlers: the package declares that entry as having side effects.
+
+## The 2D plan view
+
+`GcodeView2D` draws the same `LoadedProgram` from above (machine X/Y) on a Canvas 2D,
+without WebGL (ADR-0029). It has the same `setProgram`, `highlightLine`, `onPick`, `fit`
+and `dispose`, so a host can offer both views and switch between them.
+
+```ts
+import { GcodeView2D } from '@woodpatch/gcode-viewer';
+
+const plan = new GcodeView2D(document.getElementById('plan')!);
+plan.setProgram(program); // the same program the 3D view shows
+plan.onPick(({ line }) => editor.showPathLine(line));
+```
+
+- Drag to pan, scroll to zoom about the pointer, `fit()` to frame the path.
+- The grid adapts to the zoom (1, 2 or 5 × 10ⁿ mm) and is labelled in mm. The
+  machine's X and Y axes are drawn through the origin.
+- A click picks the nearest segment within `pickRadius` CSS px (default 6), in plan.
+  Where segments overlap in plan (a pocket's depth passes), the later one wins.
+- It doesn't import three.js, so a bundler drops the 3D view if you only use this one.
+  three.js is still a peer dependency of the package.
