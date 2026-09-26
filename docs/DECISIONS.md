@@ -1271,3 +1271,70 @@ the same palette, highlight and pick, so a host can offer both.
 - **Browser tests** (the playground's Playwright suite): the plan draws, a click picks a
   line that the editor then marks, the zoom survives a switch to 3D and back, and a
   second "2D" click re-frames.
+
+## ADR-0030: The Svelte components: source, lazy, floor-tested
+
+**Status:** Accepted, 2026-09-27. Parcel 3e.
+
+**Decision.** `@woodpatch/gcode-svelte` ships three Svelte 5 components as PLAIN SOURCE:
+`GcodeWorkbench` (the editor and viewer in sync, reading in a worker), `GcodeViewer` (3D
+or 2D plan) and `GcodeEditor`. Svelte is a peer dependency (operator, 2026-09-24). The
+two consuming apps build with different Vite majors, and a pre-built bundle would tie
+them to one toolchain. The reviewer's three conditions are enforced mechanically:
+
+- **The peer floor is what's tested.** The peer range is `^5.56.4`, the lowest Svelte
+  either app resolves today (both are on 5.56.x). The package's dev dependency is pinned
+  to exactly that version, so svelte-check and every test run on the floor. A test
+  fails if the pin and the floor ever disagree, or if the installed Svelte isn't the
+  floor. Newer 5.x minors are exercised by the apps themselves, which pin exact versions.
+- **No built output, by construction.** No `build`, `prepare` or `prepack` script, no
+  `dist`, and every `exports`/`svelte`/`sideEffects` path points into `src`, which may
+  hold only `.svelte`, `.js` and hand-written `.d.ts` files. Each is a test. The root
+  build skips the package (`--if-present`).
+- **The MIT notice in each file.** A source package has no build to prepend the banner,
+  so every source file carries it, generated from LICENSE (`scripts/licence-banner.mjs`,
+  now shared with the build; `scripts/stamp-source-banners.mjs` writes it).
+  - **Where it sits in a `.svelte` file was found by testing, not assumed.**
+    - Svelte 5.56 drops comments in `<script module>`.
+    - A bundler keeps a comment only with the statement that follows it. At the top of
+      the instance script, the banner came before a declaration that Vite 6's Rollup
+      tree-shook, and the notice went with it.
+    - So the banner sits directly on each component's `onMount(…)` call, which no
+      bundler removes. A test checks that placement in the compiled output.
+  - Tests and the CI licence check compile every component (client and server) and
+    minify it (esbuild `inline` and `eof`), and require the notice to survive.
+  - **Checked by hand on the real components:**
+    - Vite 6.4.3 with the storefront's own plugin and default settings keeps all three
+      banners.
+    - Vite 8.3.0 keeps them with `output.comments.legal` and drops them without. That's
+      the same rule as the other packages, so the staff portal must set it.
+    - Both apps should grep their chunks in CI (README).
+  - The package's LICENSE and NOTICE copies are committed, since there's no build to copy
+    them. The licence check fails if they differ from the root's.
+
+**Loading.** three.js, CodeMirror and the toolkit's packages are imported DYNAMICALLY,
+on mount (plan §4.9). Importing the package loads none of them, server rendering never
+runs them, and a prerendered page pays for the island only when it hydrates. A test
+compiles each component and fails on any static import other than `svelte` and sibling
+components, and another counts the viewer package's imports around a mount.
+
+**The worker is the host's.** A package can't make its bundler build a worker, so
+`GcodeWorkbench` takes `createWorker`, and the package exports a `./worker` entry. The
+host's worker file is `import '@woodpatch/gcode-svelte/worker'` (declared in
+`sideEffects`, so bundlers keep it).
+
+**Behaviour**, each tested in jsdom (fakes stand in for WebGL and Canvas 2D; CodeMirror
+is real):
+
+- Each view is created the first time its mode is shown. Each gets the program
+  separately, so showing the 2D plan doesn't reset the 3D camera. Both get highlights.
+- The editor's `value` is bindable. Outside changes replace the document; an edit past
+  `maxLength` (20 MB) is refused.
+- The workbench re-reads `delay` ms after the last edit or dialect change. A superseded
+  read is quiet; a real failure goes to `onerror`. It disposes its worker on unmount.
+- A loaded program is large (typed arrays): hosts should bind it to `$state.raw`, not
+  `$state`, which would deep-proxy it (README).
+
+**Not yet.** Prettier doesn't check `.svelte` files (that needs `prettier-plugin-svelte`,
+one more dependency). Browser tests of the components come with their first real host
+app, not a fixture app here.
