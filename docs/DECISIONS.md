@@ -1075,6 +1075,61 @@ tests (parcels 3c and 3f), on the CI runner's preinstalled Chrome.
 
 ---
 
+## ADR-0027: The editor: CodeMirror 6, highlighted by the core's own tokenizer
+
+**Status:** Accepted, 2026-09-26. Parcel 3b.
+
+**Decision.** `@woodpatch/gcode-editor` is a set of CodeMirror 6 extensions (`gcode()`),
+not a finished editor. The host brings CodeMirror (a peer dependency) and its own
+setup (keys, history, search).
+
+- **Highlighting uses the core's `tokenizeLine`,** not a separate grammar, so the editor
+  colours exactly what the interpreter reads. A word's colour says its role: motion (G),
+  machine (M), positions, arc centres, feed/speed, tool, line numbers, parameters.
+  Comments recede, and expressions are underlined as computed. O-words, assignments,
+  Masso `MSG` lines, `/`, `%` and checksums each have their own style.
+- **Only the visible lines are decorated** (a view plugin over `visibleRanges`), so a
+  224k-line file costs what the screen shows.
+- **Diagnostics:** `showDiagnostics(view, diagnostics)` maps the core's line and span to
+  document offsets for the lint gutter:
+  - the span when there is one, the whole line otherwise;
+  - line 0 (whole-program notes) goes on line 1;
+  - offsets are shifted past a byte-order mark on line 1, which the core's line text
+    doesn't include;
+  - spans are clamped to the line.
+    Diagnostics from a subprogram FILE belong to another file's lines. They're counted
+    (returned), not shown.
+- **Folding:** O-word blocks (`sub`, `if`, `while`, `do` → `while`, `repeat`) fold to the
+  line before their closer, so the closer stays visible.
+  - Labels are normalised as the core does (`o0100` = `o100`, `<My Sub>` = `<mysub>`).
+  - Same-label blocks nest.
+  - The search looks at most 20,000 lines ahead, and only tokenizes lines that could hold
+    an O-word, so a fold never costs a scan of a huge file.
+  - It deliberately doesn't use the interpreter's flow index: folding runs per visible
+    line, and re-indexing the whole document there would be too slow.
+- **Line ↔ path** (upstream's UX, kept per plan §2.3):
+  - `onCursorLine` reports the cursor's line when it changes.
+  - `showPathLine(view, n)` marks the viewer's picked line and scrolls to it WITHOUT
+    moving the cursor, so a viewer click can't bounce back as a cursor move.
+  - The mark follows its line through edits above it.
+- **Build:** the same externalising build as the viewer (ADR-0026), so the bundle is
+  9.8 KB and imports CodeMirror and the core. The peers were chosen under the 7-day
+  cooldown: state 6.7.5, view 6.43.12, language 6.12.4, lint 6.9.7.
+
+**Testing.** 12 tests run on CodeMirror's `EditorState` in Node:
+
+- span classes and never throwing;
+- diagnostic offsets (BOM, clamping, line 0, subprogram files), checked against a real
+  program;
+- folds (every block kind, labels, nesting, no closer, empty body);
+- the path-line field (set, move, clear, following edits);
+- the cursor line.
+
+Mutation-checked on the BOM shift and the do→while pairing. View-level behaviour
+(scrolling, the gutter, hover) gets real-browser tests with the playground (3c/3f).
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.
