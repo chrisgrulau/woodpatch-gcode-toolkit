@@ -276,4 +276,14 @@ describe('Masso positions and events (parcel 2e-2)', () => {
     expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_ARC_RADIUS_MISMATCH_UNTESTED']);
     expect(r.steps.at(-1)).toMatchObject({ kind: 'arc', endRadius: 11 });
   });
+
+  it('still refuses a gross mismatch, past 100x the tested limit (a mistyped I/J)', () => {
+    // Masso: 0.5 mm tested, so 50 mm is the gross limit. 49 mm warns; 60 mm refuses.
+    expect(codes('F100\nG0 X100\nG2 X-149 Y0 I-100 J0', masso)).toEqual([
+      'SEMANTIC_ARC_RADIUS_MISMATCH_UNTESTED',
+    ]);
+    expect(codes('F100\nG0 X100\nG2 X-160 Y0 I-100 J0', masso)).toEqual([
+      'SEMANTIC_ARC_RADIUS_MISMATCH',
+    ]);
+  });
 });

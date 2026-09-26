@@ -32,8 +32,9 @@ export interface ArcTolerance {
   readonly radiusInch: number;
   /**
    * What a mismatch beyond the tolerance is. `error` (default): the line is refused.
-   * `warn`: the controller's real limit is unmeasured, so the arc is drawn, with a
-   * warning (Masso, parcel 2e-2).
+   * `warn`: the controller's real limit is unmeasured, so an arc between the tolerance
+   * and 100x it is drawn, with a warning (Masso, parcel 2e-2). Beyond 100x it's still
+   * refused.
    */
   readonly beyond?: 'error' | 'warn';
 }
@@ -202,7 +203,10 @@ export function arcFromCentre(
   const sweep = motionSweep(a1, b1, ca, cb, clockwise, turns, a2, b2);
   if (!(absErr <= t.spiral * 100) || (!(relErr <= tol.spiralRelative) && !(absErr <= t.spiral))) {
     const f = (v: number) => (inch ? v / 25.4 : v).toFixed(4);
-    if (tol.beyond === 'warn') {
+    // The warning band covers only the untested range, up to the 100x gross limit.
+    // Beyond that the mismatch is almost certainly a mistyped I/J, which the machine
+    // would refuse too, so it's refused here (reviewer, toolkit #17).
+    if (tol.beyond === 'warn' && absErr <= t.spiral * 100) {
       return {
         ok: true,
         arc: { ca, cb, radius, endRadius, sweep },
