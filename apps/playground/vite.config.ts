@@ -7,13 +7,15 @@ export default defineConfig({
   base: './',
   build: {
     target: 'es2022',
-    sourcemap: true,
+    // Maps are built for local debugging but not referenced from the bundles, and the
+    // deploy leaves them out: no dangling sourceMappingURL on the public site.
+    sourcemap: 'hidden',
     // Keep /*! legal comments: MIT's notice must travel with the built bundle
     // (ADR-0009). scripts/check-notice.mjs proves it did.
-    rollupOptions: { output: { comments: { legal: true } } },
+    rolldownOptions: { output: { comments: { legal: true } } },
   },
   worker: {
     format: 'es',
-    rollupOptions: { output: { comments: { legal: true } } },
+    rolldownOptions: { output: { comments: { legal: true } } },
   },
 });

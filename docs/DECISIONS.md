@@ -1162,10 +1162,15 @@ page. It's a private Vite app in plain TypeScript, with no framework.
   (operator, #1171).
 - **Line ↔ path both ways:** the cursor highlights its path; clicking the path marks its
   line; clicking a diagnostic moves the editor to its line.
-- **Nothing is uploaded.** Public input is capped at 20 MB (plan §4.8), and diagnostics
-  and file names reach the page only through `textContent`, never as HTML.
-- **CSP:** `default-src 'self'`, no inline script and no `eval`. `worker-src` allows
-  `blob:`, and `style-src` allows inline styles, which CodeMirror's style injection needs.
+- **Nothing is uploaded.** Public input is capped at 20 MB (plan §4.8) on every path in:
+  opened and dropped files by size, before they're read, and paste, text drops and
+  typing by the document's length (an edit that would pass it is refused). A file dropped
+  on the editor is caught before CodeMirror's own drop handler, which would read it
+  uncapped. Diagnostics and file names reach the page only through `textContent`, never
+  as HTML.
+- **CSP:** `default-src 'self'`, no inline script and no `eval`. The worker is a
+  same-origin file (`worker-src 'self'`, no `blob:`). `style-src` allows inline styles,
+  which CodeMirror's style injection needs.
 - **The MIT notice in the built site** (ADR-0009):
   - Vite 8 (rolldown) drops legal comments by default. The config keeps them
     (`output.comments.legal`, for the page and the worker).
@@ -1184,9 +1189,21 @@ page. It's a private Vite app in plain TypeScript, with no framework.
   `provenance` pass. It's the only job with `contents: write`.
 - It rebuilds and runs `.github/ci/deploy-site.sh`, which commits the built site on top
   of the `site` branch with plain git: never a force-push, and no third-party actions.
-  Source maps are left out, and `.nojekyll` is added.
+  Only visible files are published (no dotfiles, no source maps at any depth; the maps
+  are built `hidden`, so no bundle points at one), and `.nojekyll` is added. A failure
+  to read `site` from the remote fails the deploy; only a branch that doesn't exist yet
+  starts a new one.
 - `gh-pages` stays untouched as upstream's fork reference.
-- Pages serving `site` is enabled by citadel (#1515). The script was tested against a
+- Pages serving `site` is enabled in repository settings, and `site` has a ruleset
+  blocking force-pushes and deletion, set up before the first deploy.
+- **Accepted risk: the deploy token shares a job with the build.** Install and Build run
+  the locked dependencies in the same job as the push, so a compromised dependency
+  could reach the token (through the job's environment files, `PATH`, or the workspace
+  copy of the script) and publish script on the site's origin. A separate build job
+  would need to pass the build as an artifact, which the no-`uses:` policy rules out
+  (ADR-0006). The frozen lockfile, blocked install scripts and the 7-day release age make
+  it unlikely, and the `site` ruleset limits it to adding commits.
+- The script was tested against a
   local bare repository: the first deploy creates the branch, an unchanged build is
   skipped, a change adds a commit, and a missing build fails clearly.
 

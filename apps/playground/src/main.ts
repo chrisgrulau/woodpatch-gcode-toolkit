@@ -48,6 +48,13 @@ const loader = new ProgramLoader(
   () => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }),
 );
 
+/**
+ * The core's own limit for public input is 20 MB (plan §4.8). It applies to every way
+ * in: opened and dropped files (by size, before reading), and anything that would make
+ * the editor's document bigger (paste, a text drop, typing), by length.
+ */
+const MAX_INPUT = 20 * 1024 * 1024;
+
 const editor = new EditorView({
   parent: $('editor'),
   state: EditorState.create({
@@ -62,6 +69,12 @@ const editor = new EditorView({
       keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
       EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto' } }),
       gcode({ onCursorLine: (n) => viewer.highlightLine(n) }),
+      // Refuse any edit that would take the document over the cap.
+      EditorState.transactionFilter.of((tr) => {
+        if (!tr.docChanged || tr.newDoc.length <= MAX_INPUT) return tr;
+        queueMicrotask(() => (status.textContent = 'Over 20 MB; not inserted'));
+        return [];
+      }),
       // Re-read the program a moment after the user stops typing.
       EditorView.updateListener.of((u) => {
         if (u.docChanged) scheduleReload();
@@ -172,8 +185,7 @@ async function openSample(name: string): Promise<void> {
 }
 
 async function openFile(file: File): Promise<void> {
-  // The core's own limit for public input is 20 MB (plan §4.8).
-  if (file.size > 20 * 1024 * 1024) {
+  if (file.size > MAX_INPUT) {
     status.textContent = `${file.name} is over 20 MB; not opened`;
     return;
   }
@@ -191,13 +203,29 @@ dialectSel.addEventListener('change', () => void reload());
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view]'))
   b.addEventListener('click', () => viewer.setView(b.dataset['view'] as ViewName));
 
-// Drop a file anywhere on the page.
-document.addEventListener('dragover', (e) => e.preventDefault());
-document.addEventListener('drop', (e) => {
-  e.preventDefault();
-  const f = e.dataTransfer?.files[0];
-  if (f) void openFile(f);
-});
+// Drop a file anywhere on the page, the editor included. The listener runs in the
+// capture phase and stops the event, so CodeMirror's own drop handler never sees a file
+// (it would read it uncapped, and the file would open twice). Dragging text within the
+// editor carries no files, and is left to CodeMirror.
+const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
+document.addEventListener(
+  'dragover',
+  (e) => {
+    if (hasFiles(e)) e.preventDefault();
+  },
+  { capture: true },
+);
+document.addEventListener(
+  'drop',
+  (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const f = e.dataTransfer?.files[0];
+    if (f) void openFile(f);
+  },
+  { capture: true },
+);
 
 sampleSel.value = 'tux.ngc';
 void openSample('tux.ngc');

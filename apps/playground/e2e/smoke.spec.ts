@@ -71,3 +71,40 @@ test('editing the code re-reads it', async ({ page }) => {
   await expect(page.locator('#stats')).toContainText('extent 20.0 × 15.0 × 1.0 mm');
   expect(problems).toEqual([]);
 });
+
+/** Drops a file on `selector` as a browser would: a DataTransfer carrying one File. */
+async function dropFile(page: Page, selector: string, name: string, text: string, pad = 0) {
+  await page.evaluate(
+    ([sel, n, t, p]) => {
+      const parts: BlobPart[] = [t as string];
+      if ((p as number) > 0) parts.push(new Uint8Array(p as number));
+      const dt = new DataTransfer();
+      dt.items.add(new File(parts, n as string));
+      const target = document.querySelector(sel as string);
+      if (!target) throw new Error(`no ${sel as string}`);
+      for (const type of ['dragenter', 'dragover', 'drop'])
+        target.dispatchEvent(
+          new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }),
+        );
+    },
+    [selector, name, text, pad] as const,
+  );
+}
+
+test('a file dropped on the editor opens once, through the capped path', async ({ page }) => {
+  const problems = watch(page);
+  await page.goto('/');
+  await expect(status(page)).toContainText('Read in', { timeout: 30_000 });
+  // Not doubled by CodeMirror's own drop handler inserting it as well (review, #23).
+  await dropFile(page, '.cm-content', 'dropped.nc', '(DROPPED)\nG0 X5\nG1 Y5 F100');
+  await expect(page).toHaveTitle(/dropped\.nc/);
+  await expect(page.locator('#stats')).toContainText('3 lines', { timeout: 10_000 });
+  const text = (await page.locator('.cm-content').textContent()) ?? '';
+  expect(text.split('(DROPPED)')).toHaveLength(2);
+
+  // Over the cap: refused before it's read, and the editor keeps what it had.
+  await dropFile(page, '.cm-content', 'huge.nc', 'G0 X1\n', 21 * 1024 * 1024);
+  await expect(status(page)).toContainText('huge.nc is over 20 MB');
+  await expect(page.locator('.cm-content')).toContainText('(DROPPED)');
+  expect(problems).toEqual([]);
+});

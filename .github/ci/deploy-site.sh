@@ -21,16 +21,30 @@ auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64
 git init -q "$work"
 # SITE_REMOTE exists for testing the script against a local bare repository.
 git -C "$work" remote add origin "${SITE_REMOTE:-https://github.com/${GITHUB_REPOSITORY}.git}"
-if git -C "$work" -c http.extraheader="$auth" fetch -q --depth=1 origin site 2>/dev/null; then
+# Tell "no site branch yet" (exit 2) from "couldn't reach the remote" (anything else):
+# only the first may start a new branch.
+set +e
+git -C "$work" -c http.extraheader="$auth" ls-remote -q --exit-code origin refs/heads/site >/dev/null
+have=$?
+set -e
+if [ "$have" -eq 0 ]; then
+  git -C "$work" -c http.extraheader="$auth" fetch -q --depth=1 origin site
   git -C "$work" checkout -q -B site FETCH_HEAD
-else
+elif [ "$have" -eq 2 ]; then
   git -C "$work" checkout -q --orphan site # first deploy
+else
+  echo "::error::couldn't read the site branch from the remote" >&2
+  exit 1
 fi
 
-# Replace the whole tree with the new build.
+# Replace the whole tree with the new build. Only visible files are published: no
+# dotfiles (a stray .env) and no source maps, at any depth.
 find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-cp -a "$dist"/. "$work"/
-rm -f "$work"/assets/*.map # source maps stay out of the public site
+(cd "$dist" && find . -type f ! -name '.*' ! -path '*/.*' ! -name '*.map' -print0) |
+  while IFS= read -r -d '' f; do
+    mkdir -p "$work/$(dirname "$f")"
+    cp -p "$dist/$f" "$work/$f"
+  done
 touch "$work/.nojekyll"   # serve files as they are (no Jekyll processing)
 
 git -C "$work" add -A
