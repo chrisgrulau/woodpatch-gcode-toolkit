@@ -1,7 +1,51 @@
 {
   "name": "@woodpatch/gcode-editor",
   "version": "0.0.0",
-  "private": true,
-  "description": "CodeMirror 6 language mode for G-code: tokens, folding, diagnostics from core, line-to-path highlight.",
-  "license": "MIT"
+  "description": "CodeMirror 6 support for G-code: highlighting from the core's tokenizer, diagnostics, O-word folding, line-to-path sync.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chrisgrulau/woodpatch-gcode-toolkit.git",
+    "directory": "packages/editor"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@woodpatch/gcode-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/state": "^6.7.5",
+    "@codemirror/view": "^6.43.12"
+  },
+  "devDependencies": {
+    "@codemirror/language": "6.12.4",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/state": "6.7.5",
+    "@codemirror/view": "6.43.12",
+    "@types/node": "^22.20.3",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
 }

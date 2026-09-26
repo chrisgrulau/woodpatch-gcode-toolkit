@@ -1075,6 +1075,77 @@ tests (parcels 3c and 3f), on the CI runner's preinstalled Chrome.
 
 ---
 
+## ADR-0027: The editor: CodeMirror 6, highlighted by the core's own tokenizer
+
+**Status:** Accepted, 2026-09-26. Parcel 3b.
+
+**Decision.** `@woodpatch/gcode-editor` is a set of CodeMirror 6 extensions (`gcode()`),
+not a finished editor. The host brings CodeMirror (a peer dependency) and its own
+setup (keys, history, search).
+
+- **Highlighting uses the core's `tokenizeLine`,** not a separate grammar, so the editor
+  colours exactly what the interpreter reads. A word's colour says its role: motion (G),
+  machine (M), positions, arc centres, feed/speed, tool, line numbers, parameters.
+  Comments recede, and expressions are underlined as computed. O-words, assignments,
+  Masso `MSG` lines, `/`, `%` and checksums each have their own style.
+- **Only the visible lines are decorated** (a view plugin over `visibleRanges`), so a
+  224k-line file costs what the screen shows.
+  - Each line is styled ONCE, even when CodeMirror splits a long line into several
+    visible ranges. Styling it twice added ranges out of order, `RangeSetBuilder`
+    threw, and CodeMirror disabled the plugin for the session. _Corrected in review,
+    toolkit #21._
+  - Only the first 2,000 characters of a line are styled (`MAX_STYLED_CHARS`), and a
+    tokenizer failure styles nothing rather than throwing. A pathological line can't
+    stall typing, or take out highlighting and folding. The core's own recursion and
+    super-linear rescans on such lines are filed as #1506.
+  - Line 1's byte-order mark is skipped, as the core skips it.
+- **Diagnostics:** `showDiagnostics(view, diagnostics)` maps the core's line and span to
+  document offsets for the lint gutter:
+  - the span when there is one, the whole line otherwise;
+  - line 0 (whole-program notes) goes on line 1;
+  - offsets are shifted past a byte-order mark on line 1, which the core's line text
+    doesn't include;
+  - spans are clamped to the line, and a reversed span or a non-finite line is tolerated,
+    not thrown on (it's a public function).
+    Diagnostics from a subprogram FILE belong to another file's lines. They're counted
+    (returned), not shown.
+- **Folding:** O-word blocks (`sub`, `if`, `while`, `do` → `while`, `repeat`) fold to the
+  line before their closer, so the closer stays visible.
+  - Blocks are paired from a ONE-PASS index of the document, cached per document version
+    (a `WeakMap` on the immutable `Text`).
+  - Pairing uses a stack per label: a `while` closes an open `do` with its label, and
+    otherwise opens a while loop. Same-label blocks nest.
+  - Labels are normalised by the core's own `normaliseLabel`, now exported, so the two
+    can't drift.
+  - Only lines that could hold an O-word are tokenized, and only their first 1,000
+    characters.
+  - _Corrected in review (toolkit #21):_ the first cut scanned up to 20k lines ahead per
+    visible line and per update, about 2.8 s with 150 unclosed openers on screen. The
+    index answers each line from a map.
+- **Line ↔ path** (upstream's UX, kept per plan §2.3):
+  - `onCursorLine` reports the cursor's line when it changes.
+  - `showPathLine(view, n)` marks the viewer's picked line and scrolls to it WITHOUT
+    moving the cursor, so a viewer click can't bounce back as a cursor move. Only whole
+    line numbers are marked.
+  - The mark follows its line through edits above it.
+- **Build:** the same externalising build as the viewer (ADR-0026), so the bundle is
+  9.8 KB and imports CodeMirror and the core. The peers were chosen under the 7-day
+  cooldown: state 6.7.5, view 6.43.12, language 6.12.4, lint 6.9.7.
+
+**Testing.** 12 tests run on CodeMirror's `EditorState` in Node:
+
+- span classes and never throwing;
+- diagnostic offsets (BOM, clamping, line 0, subprogram files), checked against a real
+  program;
+- folds (every block kind, labels, nesting, no closer, empty body);
+- the path-line field (set, move, clear, following edits);
+- the cursor line.
+
+Mutation-checked on the BOM shift and the do→while pairing. View-level behaviour
+(scrolling, the gutter, hover) gets real-browser tests with the playground (3c/3f).
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.
