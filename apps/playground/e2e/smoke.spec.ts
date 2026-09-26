@@ -137,3 +137,47 @@ test('the editor is readable on the dark page (text was once black on black)', a
   }
   expect(problems).toEqual([]);
 });
+
+test('the 2D plan draws, picks a line, and keeps its zoom when hidden', async ({ page }) => {
+  const problems = watch(page);
+  await page.goto('/');
+  await expect(status(page)).toContainText('Read in', { timeout: 30_000 });
+  const plan = page.locator('#plan');
+  await expect(plan).toBeHidden();
+  await page.click('[data-view="plan"]');
+  await expect(plan).toBeVisible();
+  await expect(page.locator('[data-view="plan"]')).toHaveAttribute('aria-pressed', 'true');
+
+  // Tux's raster fills the middle of the fitted plan: a click there picks a line, and
+  // the editor marks it (and scrolls to it) without moving the cursor.
+  const box = await plan.boundingBox();
+  if (!box) throw new Error('no plan box');
+  await expect(page.locator('.gc-path-line')).toHaveCount(0);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator('.gc-path-line')).toHaveCount(1);
+  await expect(page.locator('.gc-path-line')).toContainText('G1');
+
+  // Zoom in, switch to 3D and back: the plan is as it was left, not re-fitted.
+  await page.mouse.move(box.x + box.width / 3, box.y + box.height / 3);
+  await page.mouse.wheel(0, -600);
+  await page.waitForTimeout(100);
+  const zoomed = await plan.screenshot();
+  await page.click('[data-view="iso"]');
+  await expect(plan).toBeHidden();
+  await page.click('[data-view="plan"]');
+  await expect.poll(async () => (await plan.screenshot()).equals(zoomed)).toBe(true);
+
+  // A second click on 2D re-frames the whole path.
+  await page.click('[data-view="plan"]');
+  await expect.poll(async () => (await plan.screenshot()).equals(zoomed)).toBe(false);
+
+  // The plan has drawn something: it differs clearly from the plan of an empty program.
+  const drawn = (await plan.screenshot()).length;
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('Delete');
+  await expect(page.locator('#stats')).toContainText('no motion', { timeout: 10_000 });
+  const empty = (await plan.screenshot()).length;
+  expect(drawn).toBeGreaterThan(empty * 1.3);
+  expect(problems).toEqual([]);
+});
