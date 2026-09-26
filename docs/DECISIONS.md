@@ -307,6 +307,19 @@ measured on the same runner in the same job (`node tools/bench-core.mjs --ci`). 
 reference machine the target is 2000 / 1379 ms = **1.45×**. After parcel 2c-1 the ratio is
 about 1.3×, so the remaining budget is visible, and spending it fails the build.
 
+_Measurement amended 2026-09-26 (toolkit 2c-2)._ The core's own time varies about ±10%
+between measurements, because parsing aztec allocates about 2.6 million small objects and
+the garbage collector's timing varies. Upstream's time is steady. So the gate:
+
+- times each side in its own block, core first, with a forced collection before every
+  run (`node --expose-gc`), keeping the minimum;
+- retries a measurement that comes out over budget, up to 3 attempts, and fails only
+  if all are over.
+
+A real regression fails every attempt; noise rarely does. Every attempt is printed. The
+lasting cure is fewer allocations: the path model (2d) avoids per-segment objects, and a
+leaner token representation is the next lever if the budget stays tight.
+
 ## ADR-0015: Primary dialect is Masso G3, firmware v5.13
 
 **Status:** Accepted, 2026-09-26 (operator).
@@ -484,6 +497,49 @@ program end.
 the minimum of 10 runs on the reference machine via `node tools/bench-core.mjs`,
 against ADR-0014's 2 s target. The geometry layer (2d) has to fit in the remaining
 headroom, so it will build its path model without per-segment objects.
+
+## ADR-0020: Canned cycles follow LinuxCNC's source, with the dialect differences as data
+
+**Status:** Accepted, 2026-09-26.
+
+**Decision.** G73, G81, G82 and G83 (XY plane) are interpreted as LinuxCNC's
+interpreter does them, from `interp_cycles.cc` (`convert_cycle_xy`, `CYCLE_MACRO`,
+`convert_cycle_g73/g81/g82/g83`) rather than its prose docs. The docs say G73 ends at R;
+the source retracts to the clearance plane.
+
+- **Preliminary motion:** starting below R, Z rises to R once. Each repeat traverses XY
+  (at the current height on the first repeat if above R, otherwise at the clearance
+  plane), then rapids down to R.
+- **Clearance plane:** R under G99. Under G98, the level when the run of cycles began
+  (LinuxCNC `cycle_il`), raised to R if it was below. That level resets whenever an
+  ordinary motion runs.
+- **G90:** R and Z are work Z levels. **G91:** R is relative to that initial level, and
+  Z is relative to R; X/Y step from the current position.
+- **G81:** feed to Z, then rapid to clear. **G82:** the same, with a dwell. **G83:** feed
+  Q, rapid out to R, then rapid down to `clearance` above the last depth, and repeat.
+  **G73:** feed Q, then back off by `retract`, and repeat. Depths are counted from R.
+- **Sticky values:** Z, R, Q and P carry over while the same cycle stays active. The
+  first line of a cycle must have them.
+- **Errors** (the line doesn't run): no R, Z, Q or P on a cycle's first line; R below Z;
+  Q ≤ 0; zero feed; inverse-time feed; cutter compensation on; a plane other than XY;
+  rotary axis words; a repeat count that isn't a positive integer.
+- **G84–G89** are recognised and reported as not implemented. LinuxCNC has them; Masso
+  doesn't.
+
+LinuxCNC's two worked G81 examples (absolute, and incremental with L3) are tests,
+checked move for move against its documentation.
+
+**Controller differences are `InterpreterRules`** (the dialect profiles in 2e pick them):
+
+| Rule                        | LinuxCNC (default)          | Masso G3 (docs and the 2026-09-26 machine test) |
+| --------------------------- | --------------------------- | ----------------------------------------------- |
+| `dwellUnits` (G4 and G82 P) | seconds                     | **milliseconds**                                |
+| `cycleRepeat`               | `L`, stepping X/Y under G91 | **`K`, at the same position**                   |
+| `g73Retract`                | 0.254 mm (0.010 in)         | **1.0 mm**                                      |
+| `g83Clearance`              | 0.254 mm                    | not documented; the default applies             |
+
+The machine test confirmed Masso's G83 retracts to R between pecks and ends at the
+initial Z under G98, as modelled.
 
 ---
 

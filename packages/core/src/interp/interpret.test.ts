@@ -4,7 +4,13 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { interpret, parse, type InterpretOptions, type Step } from '../index.js';
+import {
+  LINUXCNC_INTERPRETER_RULES,
+  interpret,
+  parse,
+  type InterpretOptions,
+  type Step,
+} from '../index.js';
 
 const run = (src: string, options?: InterpretOptions) => interpret(parse(src), options);
 const moves = (steps: readonly Step[]) =>
@@ -65,7 +71,9 @@ describe('order of execution (RS274/NGC, not line order)', () => {
   });
 
   it("reads F in the line's final units when the dialect says so", () => {
-    const r = run('G21\nG20 G1 X1 F10', { interpreterRules: { feedUnits: 'end-of-line' } });
+    const r = run('G21\nG20 G1 X1 F10', {
+      interpreterRules: { ...LINUXCNC_INTERPRETER_RULES, feedUnits: 'end-of-line' },
+    });
     expect(moves(r.steps)[0]).toMatchObject({ feed: { mmPerMinute: 254 } });
     expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_FEED_UNITS_AMBIGUOUS']);
   });
@@ -220,11 +228,10 @@ describe('lines that cannot run are reported, and the tool stays put', () => {
     expect(moves(r.steps).map((s) => s.to.X)).toEqual([10]);
   });
 
-  it('names the parcel for recognised codes that are not interpreted yet (canned cycles: R4)', () => {
-    const r = run('G21 G90\nG0 Z5\nG81 X10 Y10 Z-5 R1 F100');
+  it('names what is not implemented yet (G84-G89) instead of drawing something wrong', () => {
+    const r = run('G21 G90\nG0 Z5\nG85 X10 Y10 Z-5 R1 F100');
     expect(r.diagnostics.map((d) => d.code)).toEqual(['SEMANTIC_NOT_YET_SUPPORTED']);
-    expect(r.diagnostics[0]!.message).toContain('2c-2');
-    expect(moves(r.steps)).toHaveLength(1); // no rapid plunge to depth, as upstream drew
+    expect(moves(r.steps)).toHaveLength(1);
   });
 
   it('rejects two codes from one modal group, and a group-0/motion clash', () => {
@@ -300,5 +307,166 @@ describe('events and program end', () => {
 
   it('needs F on every feed move in inverse-time mode', () => {
     expect(codes('G21 G90 G93\nG1 X1 F2\nG1 X2')).toEqual(['SEMANTIC_NO_FEED_RATE']);
+  });
+});
+
+/** Canned-cycle moves as [rapid|feed, X, Y, Z] rows, for comparison with LinuxCNC's worked examples. */
+const path = (src: string, options?: InterpretOptions) =>
+  moves(run(src, options).steps).map((m) => [
+    m.kind === 'linear' && m.rapid ? 'rapid' : 'feed',
+    +m.to.X.toFixed(4),
+    +m.to.Y.toFixed(4),
+    +m.to.Z.toFixed(4),
+  ]);
+const start = { X: 1, Y: 2, Z: 3 };
+
+describe('canned cycles (LinuxCNC interp_cycles.cc; fixes R4)', () => {
+  it('G81, LinuxCNC example 1: absolute, G98', () => {
+    // "A rapid move parallel to the XY plane to (X4, Y5); a rapid move parallel to the Z-axis
+    // to (Z2.8); move ... at the feed rate to (Z1.5); a rapid move ... to (Z3)"
+    expect(path('G21 F100\nG90 G98 G81 X4 Y5 Z1.5 R2.8', { start })).toEqual([
+      ['rapid', 4, 5, 3],
+      ['rapid', 4, 5, 2.8],
+      ['feed', 4, 5, 1.5],
+      ['rapid', 4, 5, 3],
+    ]);
+  });
+
+  it('G81, LinuxCNC example 2: incremental, G98, L3, move for move', () => {
+    expect(path('G21 F100\nG91 G98 G81 X4 Y5 Z-0.6 R1.8 L3', { start })).toEqual([
+      ['rapid', 1, 2, 4.8], // preliminary: OLD_Z < clear Z
+      ['rapid', 5, 7, 4.8],
+      ['feed', 5, 7, 4.2],
+      ['rapid', 5, 7, 4.8],
+      ['rapid', 9, 12, 4.8],
+      ['feed', 9, 12, 4.2],
+      ['rapid', 9, 12, 4.8],
+      ['rapid', 13, 17, 4.8],
+      ['feed', 13, 17, 4.2],
+      ['rapid', 13, 17, 4.8],
+    ]);
+  });
+
+  it('G99 retracts to R; later lines reuse the sticky R and Z', () => {
+    expect(path('G21 G90 F100\nG0 Z10\nG99 G81 X0 Y0 Z-2 R2\nX5').slice(1)).toEqual([
+      ['rapid', 0, 0, 10],
+      ['rapid', 0, 0, 2],
+      ['feed', 0, 0, -2],
+      ['rapid', 0, 0, 2], // G99: back to R
+      ['rapid', 5, 0, 2], // next hole: traverse at the clearance plane (R)
+      ['feed', 5, 0, -2],
+      ['rapid', 5, 0, 2],
+    ]);
+  });
+
+  it('G82 dwells at the bottom (P in seconds; in ms under a Masso-style rule)', () => {
+    const src = 'G21 G90 F100\nG0 Z5\nG98 G82 X0 Y0 Z-1 R1 P2';
+    expect(run(src).steps.find((s) => s.kind === 'dwell')).toMatchObject({ seconds: 2 });
+    const ms = {
+      interpreterRules: { ...LINUXCNC_INTERPRETER_RULES, dwellUnits: 'milliseconds' as const },
+    };
+    expect(
+      run('G21 G90 F100\nG0 Z5\nG98 G82 X0 Y0 Z-1 R1 P2000', ms).steps.find(
+        (s) => s.kind === 'dwell',
+      ),
+    ).toMatchObject({ seconds: 2 });
+    expect(run('G21\nG4 P1500', ms).steps[0]).toMatchObject({ kind: 'dwell', seconds: 1.5 });
+  });
+
+  it('G83 pecks: feed Q, rapid out to R, rapid back to just above the last depth', () => {
+    expect(path('G21 G90 F100\nG0 Z5\nG98 G83 X0 Y0 Z-5 R2 Q2').slice(1)).toEqual([
+      ['rapid', 0, 0, 5],
+      ['rapid', 0, 0, 2],
+      ['feed', 0, 0, 0],
+      ['rapid', 0, 0, 2],
+      ['rapid', 0, 0, 0.254],
+      ['feed', 0, 0, -2],
+      ['rapid', 0, 0, 2],
+      ['rapid', 0, 0, -1.746],
+      ['feed', 0, 0, -4],
+      ['rapid', 0, 0, 2],
+      ['rapid', 0, 0, -3.746],
+      ['feed', 0, 0, -5],
+      ['rapid', 0, 0, 5], // G98: back to the initial level
+    ]);
+  });
+
+  it('G73 pecks with a small back-off (0.254 mm LinuxCNC; 1.0 mm under a Masso-style rule)', () => {
+    const src = 'G21 G90 F100\nG0 Z5\nG99 G73 X0 Y0 Z-3 R1 Q2';
+    expect(path(src).slice(3)).toEqual([
+      ['feed', 0, 0, -1],
+      ['rapid', 0, 0, -0.746],
+      ['feed', 0, 0, -3],
+      ['rapid', 0, 0, 1],
+    ]);
+    const masso = { interpreterRules: { ...LINUXCNC_INTERPRETER_RULES, g73Retract: 1 } };
+    expect(path(src, masso)[4]).toEqual(['rapid', 0, 0, 0]);
+  });
+
+  it('repeats at the same position when the dialect says so (Masso K)', () => {
+    const masso = {
+      interpreterRules: {
+        ...LINUXCNC_INTERPRETER_RULES,
+        cycleRepeat: { letter: 'K' as const, stepInIncremental: false },
+      },
+    };
+    const holes = path('G21 F100\nG91 G98 G81 X4 Y5 Z-0.6 R1.8 K3', { start, ...masso }).filter(
+      (m) => m[0] === 'feed',
+    );
+    expect(holes.map((m) => [m[1], m[2]])).toEqual([
+      [5, 7],
+      [5, 7],
+      [5, 7],
+    ]);
+  });
+
+  it('starts a new initial level after an ordinary move', () => {
+    const p = path('G21 G90 F100\nG0 Z5\nG98 G81 X0 Y0 Z-1 R1\nG0 Z8\nG81 X5 Y0 Z-1 R1');
+    expect(p.at(-1)).toEqual(['rapid', 5, 0, 8]); // G98 now returns to 8, not 5
+  });
+
+  it.each([
+    ['G21 G90 F100\nG81 X0 Y0 Z-1', 'SEMANTIC_CYCLE_NO_R'],
+    ['G21 G90 F100\nG81 X0 Y0 R1', 'SEMANTIC_CYCLE_NO_Z'],
+    ['G21 G90 F100\nG81 X0 Y0 Z2 R1', 'SEMANTIC_CYCLE_R_BELOW_Z'],
+    ['G21 G90 F100\nG83 X0 Y0 Z-1 R1', 'SEMANTIC_CYCLE_NO_Q'],
+    ['G21 G90 F100\nG83 X0 Y0 Z-1 R1 Q0', 'SEMANTIC_CYCLE_BAD_Q'],
+    ['G21 G90 F100\nG82 X0 Y0 Z-1 R1', 'SEMANTIC_CYCLE_NO_P'],
+    ['G21 G90\nG81 X0 Y0 Z-1 R1', 'SEMANTIC_NO_FEED_RATE'],
+    ['G21 G90 G93\nG81 X0 Y0 Z-1 R1 F2', 'SEMANTIC_CYCLE_INVERSE_TIME'],
+    ['G21 G90 F100 G41 D1\nG81 X0 Y0 Z-1 R1', 'SEMANTIC_CYCLE_CUTTER_COMP'],
+    ['G21 G90 F100 G18\nG81 X0 Y0 Z-1 R1', 'SEMANTIC_CYCLE_PLANE'],
+    ['G21 G90 F100\nG81 X0 Y0 Z-1 R1 L0', 'SEMANTIC_CYCLE_REPEAT'],
+  ])('%s → %s, and no motion', (src, code) => {
+    const r = run(src);
+    expect(r.diagnostics.map((d) => d.code)).toContain(code);
+    expect(moves(r.steps)).toEqual([]);
+  });
+});
+
+describe('fast path', () => {
+  // Bracketing every axis and feed number ([1.5] for 1.5) means the same thing but
+  // forces the general path, so the two paths must give identical results.
+  const bracketed = (src: string) => src.replace(/([XYZABCF])(-?[0-9.]+)/gi, '$1[$2]');
+  const dir = fileURLToPath(new URL('../../../../fixtures/upstream/', import.meta.url));
+
+  it.each(['tux.ngc', 'webgcode.ngc', 'test_pycam.ngc', 'aztec_calendar.ngc'])(
+    'gives the same steps and diagnostics as the general path: %s',
+    (f) => {
+      const src = readFileSync(join(dir, f), 'utf8').split('\n').slice(0, 30000).join('\n');
+      const fast = run(src);
+      const general = run(bracketed(src));
+      expect(general.steps.length).toBe(fast.steps.length);
+      expect(general.steps).toEqual(fast.steps);
+      expect(general.diagnostics).toEqual(fast.diagnostics);
+      expect(general.state).toEqual(fast.state);
+    },
+  );
+
+  it('ends a run of canned cycles, as the general path does', () => {
+    // After G1 on the fast path, the next G81 must start a new initial level.
+    const src = 'G0 Z10\nG98 G81 X1 Z-1 R2 F100\nG1 Z5\nG81 X2 Z-1 R2';
+    expect(ends(src).at(-1)).toEqual([2, 0, 5]);
+    expect(ends(bracketed(src)).at(-1)).toEqual([2, 0, 5]);
   });
 });

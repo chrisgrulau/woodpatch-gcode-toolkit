@@ -20,8 +20,9 @@ const G = (group: number, codes: number[], later?: string): [string, CodeInfo][]
 
 export const G_CODES: ReadonlyMap<string, CodeInfo> = new Map([
   ...G(0, [4, 10, 28, 28.1, 30, 30.1, 52, 53, 92, 92.1, 92.2, 92.3]),
-  ...G(1, [0, 1, 2, 3, 80]),
-  ...G(1, [73, 81, 82, 83, 84, 85, 86, 87, 88, 89], 'canned cycles (parcel 2c-2)'),
+  ...G(1, [0, 1, 2, 3, 80, 73, 81, 82, 83]),
+  // LinuxCNC has these; Masso does not. Recognised, not interpreted yet.
+  ...G(1, [84, 85, 86, 87, 88, 89], 'canned cycles G84-G89 (not implemented yet)'),
   ...G(2, [17, 18, 19]),
   ...G(3, [90, 91]),
   ...G(4, [90.1, 91.1]),

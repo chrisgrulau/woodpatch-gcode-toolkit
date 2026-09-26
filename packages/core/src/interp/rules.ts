@@ -19,9 +19,26 @@ export interface InterpreterRules {
    * different controllers.
    */
   readonly feedUnits: 'at-feed-step' | 'end-of-line';
+  /** Units of the P word of G4 and G82. LinuxCNC: seconds. Masso: milliseconds. */
+  readonly dwellUnits: 'seconds' | 'milliseconds';
+  /**
+   * Canned-cycle repeats. LinuxCNC: `L`, and under G91 each repeat steps X/Y by the
+   * programmed increment. Masso: `K`, repeated at the same position.
+   */
+  readonly cycleRepeat: { readonly letter: 'L' | 'K'; readonly stepInIncremental: boolean };
+  /** G73 back-off after each peck, in mm. LinuxCNC: 0.254 (0.010 in). Masso: 1.0. */
+  readonly g73Retract: number;
+  /** G83: how far above the last peck the rapid descent stops, in mm. LinuxCNC: 0.254. */
+  readonly g83Clearance: number;
 }
 
 /** LinuxCNC's behaviour, verified against its source (reviewer, toolkit #10). */
 export const LINUXCNC_INTERPRETER_RULES: InterpreterRules = Object.freeze({
   feedUnits: 'at-feed-step',
+  dwellUnits: 'seconds',
+  cycleRepeat: Object.freeze({ letter: 'L', stepInIncremental: true }),
+  // interp_cycles.cc: parameter_g73_peck_clearance / parameter_g83_peck_clearance,
+  // documented as 0.010 in / 0.254 mm.
+  g73Retract: 0.254,
+  g83Clearance: 0.254,
 });

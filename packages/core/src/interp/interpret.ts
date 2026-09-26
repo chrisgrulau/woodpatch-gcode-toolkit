@@ -7,6 +7,7 @@ import { LINUXCNC_RULES, type ExpressionRules } from '../expr/rules.js';
 import type { Diagnostic, Line, Program, Severity, Span, Value } from '../syntax/types.js';
 import { G_CODES, M_CODES, codeKey } from './codes.js';
 import { LINUXCNC_INTERPRETER_RULES, type InterpreterRules } from './rules.js';
+import { cycleOps, type CycleCode } from './cycles.js';
 import {
   AXES,
   type Axis,
@@ -84,7 +85,23 @@ const WCS_CODES = [
   ['59.2', 8],
   ['59.3', 9],
 ] as const;
-const MOTION_CODES = ['0', '1', '2', '3', '80'] as const;
+const MOTION_CODES = ['0', '1', '2', '3', '80', '73', '81', '82', '83'] as const;
+const CYCLES: ReadonlySet<string> = new Set(['G73', 'G81', 'G82', 'G83']);
+
+/** Letters the fast path accepts, as bits (any other letter takes the general path). */
+const FAST_LETTERS: Readonly<Record<string, number>> = {
+  X: 1,
+  Y: 2,
+  Z: 4,
+  A: 8,
+  B: 16,
+  C: 32,
+  F: 64,
+  N: 128,
+  G: 256,
+};
+/** The fast path has nothing to report as unused, so its "used" set is a no-op. */
+const NO_USED = { add: (): void => {} };
 
 /** Word letters as bits, for a cheap per-line "which letters were used" set. */
 const bit = (letter: string) => 1 << (letter.charCodeAt(0) - 65);
@@ -105,6 +122,13 @@ class Interpreter {
   private readonly named = new Map<string, number>();
   private readonly params: ParameterReader;
   private readonly once = new Set<string>();
+  /** Canned cycles: sticky R, Q, P and Z (program units converted to mm; P in seconds). */
+  private cycleR: number | null = null;
+  private cycleQ: number | null = null;
+  private cycleP: number | null = null;
+  private cycleZ: number | null = null;
+  /** The level (machine Z) when the current run of canned cycles began; G98 returns here. */
+  private cycleInitial: number | null = null;
   private offsetCache: Position | null = null;
 
   /** Immutable: replaced on every move, never mutated, so steps can share it safely. */
@@ -170,6 +194,7 @@ class Interpreter {
   // ── One line ────────────────────────────────────────────────────────────
 
   private line(line: Line): void {
+    if (this.fastLine(line)) return;
     const n = line.lineNo;
     const tokens = line.tokens;
     if (tokens.length === 0) return;
@@ -232,6 +257,56 @@ class Interpreter {
 
     this.execute(n, words);
     for (const a of assignments) this.assign(line, a.target, a.value);
+  }
+
+  /**
+   * Fast path for the overwhelmingly common CAM line: plain-number X/Y/Z/A/B/C/F/N
+   * words under a modal G0 or G1 (e.g. `X12.5 Y3.2 Z-1`). It does exactly what the
+   * general path would, without that path's per-line allocations (ADR-0014 budget).
+   * Anything else (G/M codes, expressions, repeats, arcs, syntax errors, negative F)
+   * returns false and takes the general path, so behaviour cannot diverge.
+   */
+  private fastLine(line: Line): boolean {
+    const tokens = line.tokens;
+    if (tokens.length === 0 || line.diagnostics.length > 0) return false;
+    let seen = 0;
+    let f: number | undefined;
+    let g: 'G0' | 'G1' | undefined;
+    let axes = 0;
+    for (const t of tokens) {
+      if (t.kind === 'comment') continue;
+      if (t.kind !== 'word' || t.value?.kind !== 'number') return false;
+      const b = FAST_LETTERS[t.letter];
+      if (b === undefined || (seen & b) !== 0) return false;
+      seen |= b;
+      const v = t.value.value;
+      if (t.letter === 'G') {
+        // Only a lone G0 or G1: it just sets the motion mode, as the general path would.
+        if (v === 0) g = 'G0';
+        else if (v === 1) g = 'G1';
+        else return false;
+      } else if (t.letter === 'F') {
+        if (v < 0) return false;
+        f = v;
+      } else if (t.letter !== 'N') axes++;
+    }
+    const motion = g ?? this.motion;
+    if (motion !== 'G0' && motion !== 'G1') return false;
+    this.motion = motion;
+    // An ordinary motion ends a run of canned cycles (as the general path does).
+    this.cycleInitial = null;
+    if (f !== undefined) {
+      this.feedRate = this.feedMode === 'inverse-time' ? f : f * (this.units === 'inch' ? 25.4 : 1);
+    }
+    if (axes === 0) return true;
+    const words: Word[] = [];
+    for (const t of tokens) {
+      if (t.kind === 'word' && t.value?.kind === 'number' && t.letter !== 'N' && t.letter !== 'G') {
+        words.push({ letter: t.letter, value: t.value.value, span: t.span });
+      }
+    }
+    this.move(line.lineNo, words, false, NO_USED);
+    return true;
   }
 
   /** Letters, repeats and modal groups. False means: do not run the line. */
@@ -430,7 +505,7 @@ class Interpreter {
       if (!p) this.report(n, 'error', 'SEMANTIC_DWELL_WITHOUT_P', 'G4 needs a P word (seconds)');
       else if (p.value < 0)
         this.report(n, 'error', 'SEMANTIC_NEGATIVE_DWELL', 'Dwell time cannot be negative', p.span);
-      else this.steps.push({ kind: 'dwell', line: n, seconds: p.value });
+      else this.steps.push({ kind: 'dwell', line: n, seconds: this.dwellSeconds(p.value) });
     }
 
     // Plane, units, cutter compensation, tool length offset, coordinate system,
@@ -519,8 +594,20 @@ class Interpreter {
     }
 
     // Motion (G0–G3, G80), possibly modified by G53.
+    const priorMotion = this.motion;
     for (const c of explicitMotion) this.motion = `G${c}` as ModalState['motion'];
-    if (!motionSuspended) {
+    // The cycle's initial level (LinuxCNC cycle_il) ends when any other motion runs.
+    if (!CYCLES.has(this.motion)) this.cycleInitial = null;
+    if (!motionSuspended && CYCLES.has(this.motion)) {
+      if (axisWords.length > 0) this.cycle(n, words, priorMotion, used);
+      else if (explicitMotion.length > 0)
+        this.report(
+          n,
+          'error',
+          'SEMANTIC_CYCLE_NO_AXES',
+          `${this.motion} needs X, Y or Z; line not run`,
+        );
+    } else if (!motionSuspended) {
       const arcWords = words.some((w) => 'IJKR'.includes(w.letter));
       if (axisWords.length > 0 || (arcWords && (this.motion === 'G2' || this.motion === 'G3'))) {
         for (const w of axisWords) used.add(w.letter);
@@ -703,6 +790,158 @@ class Interpreter {
       offset,
     });
     this.position = target;
+  }
+
+  /**
+   * A canned-cycle block (G73/G81/G82/G83, XY plane): resolve the values the way
+   * LinuxCNC's convert_cycle_xy does, then emit the motions from cycleOps (ADR-0020).
+   */
+  private cycle(
+    n: number,
+    words: readonly Word[],
+    prior: ModalState['motion'],
+    used: { add(l: string): void },
+  ): void {
+    const code = this.motion as CycleCode;
+    const same = prior === code;
+    const fail = (c: string, m: string) => this.report(n, 'error', c, `${m}; line not run`);
+    const get = (l: string) => words.find((w) => w.letter === l);
+    if (this.plane !== 'XY')
+      return fail('SEMANTIC_CYCLE_PLANE', 'Canned cycles are supported in the XY plane (G17) only');
+    if (this.feedMode === 'inverse-time')
+      return fail(
+        'SEMANTIC_CYCLE_INVERSE_TIME',
+        'Canned cycles cannot run in inverse-time feed (G93)',
+      );
+    if (this.cutterComp !== 'off')
+      return fail(
+        'SEMANTIC_CYCLE_CUTTER_COMP',
+        'Canned cycles cannot run with cutter compensation on',
+      );
+    if (this.feedRate === null || this.feedRate <= 0)
+      return fail('SEMANTIC_NO_FEED_RATE', 'Canned cycle with no feed rate set');
+    for (const l of ['A', 'B', 'C'])
+      if (get(l))
+        return fail('SEMANTIC_CYCLE_ROTARY', 'Rotary axis words cannot be used in a canned cycle');
+
+    const u = this.units === 'inch' ? 25.4 : 1;
+    const rw = get('R');
+    const r0 = rw ? rw.value * u : same ? this.cycleR : null;
+    if (r0 === null)
+      return fail('SEMANTIC_CYCLE_NO_R', `${code} needs an R (retract plane) on its first line`);
+    const zw = get('Z');
+    const z0 = zw ? zw.value * u : same ? this.cycleZ : null;
+    if (z0 === null)
+      return fail('SEMANTIC_CYCLE_NO_Z', `${code} needs a Z (hole bottom) on its first line`);
+    let q: number | null = null;
+    if (code === 'G73' || code === 'G83') {
+      const qw = get('Q');
+      q = qw ? qw.value * u : same ? this.cycleQ : null;
+      if (q === null)
+        return fail('SEMANTIC_CYCLE_NO_Q', `${code} needs a Q (peck depth) on its first line`);
+      if (q <= 0) return fail('SEMANTIC_CYCLE_BAD_Q', 'Q (peck depth) must be positive');
+    }
+    let p: number | null = null;
+    if (code === 'G82') {
+      const pw = get('P');
+      p = pw ? this.dwellSeconds(pw.value) : same ? this.cycleP : null;
+      if (p === null) return fail('SEMANTIC_CYCLE_NO_P', 'G82 needs a P (dwell) on its first line');
+      if (p < 0) return fail('SEMANTIC_NEGATIVE_DWELL', 'Dwell time cannot be negative');
+    }
+    const rep = get(this.behaviour.cycleRepeat.letter);
+    const repeats = rep ? rep.value : 1;
+    if (!Number.isInteger(repeats) || repeats < 1) {
+      return fail(
+        'SEMANTIC_CYCLE_REPEAT',
+        `${this.behaviour.cycleRepeat.letter} (repeats) must be a positive integer`,
+      );
+    }
+
+    const pos = this.position;
+    const offset = this.offset();
+    if (this.cycleInitial === null) this.cycleInitial = pos.Z;
+    let initial = this.cycleInitial;
+    const incremental = this.distance === 'incremental';
+    const x = get('X');
+    const y = get('Y');
+    // G90: R and Z are work Z levels. G91: R is relative to the initial level, and Z to R.
+    const r = incremental ? initial + r0 : r0 + offset.Z;
+    const bottom = incremental ? r + z0 : z0 + offset.Z;
+    if (r < bottom)
+      return fail('SEMANTIC_CYCLE_R_BELOW_Z', 'R (retract plane) is below Z (hole bottom)');
+
+    const holes: { x: number; y: number }[] = [];
+    let hx = pos.X;
+    let hy = pos.Y;
+    for (let k = 0; k < repeats; k++) {
+      if (incremental) {
+        if (k === 0 || this.behaviour.cycleRepeat.stepInIncremental) {
+          hx += x ? x.value * u : 0;
+          hy += y ? y.value * u : 0;
+        }
+      } else {
+        hx = x ? x.value * u + offset.X : pos.X;
+        hy = y ? y.value * u + offset.Y : pos.Y;
+      }
+      holes.push({ x: hx, y: hy });
+    }
+
+    // Preliminary motion: from below R, rise to R once (convert_cycle_xy).
+    let zNow = pos.Z;
+    const steps: Step[] = [];
+    const at = (px: number, py: number, pz: number): Position => ({ ...pos, X: px, Y: py, Z: pz });
+    let from: Position = pos;
+    const feed: Feed = { mode: 'per-minute', mmPerMinute: this.feedRate };
+    if (initial < r) {
+      const to = at(pos.X, pos.Y, r);
+      steps.push({ kind: 'linear', line: n, rapid: true, from, to, feed: null, offset });
+      from = to;
+      zNow = r;
+      initial = r;
+    }
+    const clear = this.retract === 'r-plane' ? r : initial;
+    for (const op of cycleOps({
+      code,
+      x: from.X,
+      y: from.Y,
+      z: zNow,
+      holes,
+      r,
+      bottom,
+      clear,
+      ...(q !== null ? { peck: q } : {}),
+      ...(p !== null ? { dwellSeconds: p } : {}),
+      g73Retract: this.behaviour.g73Retract,
+      g83Clearance: this.behaviour.g83Clearance,
+    })) {
+      if (op.kind === 'dwell') {
+        steps.push({ kind: 'dwell', line: n, seconds: op.seconds });
+        continue;
+      }
+      const to = at(op.x, op.y, op.z);
+      steps.push({
+        kind: 'linear',
+        line: n,
+        rapid: op.kind === 'rapid',
+        from,
+        to,
+        feed: op.kind === 'feed' ? feed : null,
+        offset,
+      });
+      from = to;
+    }
+    this.steps.push(...steps);
+    this.position = from;
+    this.cycleR = r0;
+    this.cycleZ = z0;
+    if (q !== null) this.cycleQ = q;
+    if (p !== null) this.cycleP = p;
+    for (const l of ['X', 'Y', 'Z', 'R', 'Q', 'P', this.behaviour.cycleRepeat.letter]) used.add(l);
+  }
+
+  /** A P dwell value in seconds, per the dialect's dwell units. */
+  private dwellSeconds(p: number): number {
+    return this.behaviour.dwellUnits === 'milliseconds' ? p / 1000 : p;
   }
 
   /** Target machine position from the line's axis words. */

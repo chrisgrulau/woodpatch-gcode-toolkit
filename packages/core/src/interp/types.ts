@@ -88,7 +88,7 @@ export interface InterpretOptions {
 
 /** The modal state after the last line: useful for tests, editors and resuming. */
 export interface ModalState {
-  readonly motion: 'G0' | 'G1' | 'G2' | 'G3' | 'G80';
+  readonly motion: 'G0' | 'G1' | 'G2' | 'G3' | 'G80' | 'G73' | 'G81' | 'G82' | 'G83';
   readonly plane: Plane;
   readonly units: 'mm' | 'inch';
   readonly distance: 'absolute' | 'incremental';
