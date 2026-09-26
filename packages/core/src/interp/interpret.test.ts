@@ -179,19 +179,30 @@ describe('arcs (described here; resolved and validated by the geometry layer)', 
       clockwise: true,
       plane: 'XY',
       centre: { X: 0, Y: 0 },
-      radius: null,
+      radius: 10,
+      endRadius: 10,
       turns: 1,
     });
+    // Clockwise from 0° round to 90°: three quarters of a turn.
+    expect(a?.kind === 'arc' && a.sweep).toBeCloseTo((-3 * Math.PI) / 2, 12);
   });
 
   it('reads absolute centres in G90.1', () => {
-    const [, a] = moves(run('G21 G90 G90.1 F100\nG0 X10\nG3 X0 Y10 I3 J4').steps);
-    expect(a).toMatchObject({ centre: { X: 3, Y: 4 }, clockwise: false });
+    const [, a] = moves(run('G21 G90 G90.1 F100\nG0 X10\nG3 X0 Y0 I5 J0').steps);
+    expect(a).toMatchObject({ centre: { X: 5, Y: 0 }, clockwise: false, radius: 5 });
+    expect(a?.kind === 'arc' && a.sweep).toBeCloseTo(Math.PI, 12);
   });
 
-  it('keeps R arcs as a signed radius', () => {
-    const [, a] = moves(run('G21 G90 F100\nG0 X0\nG2 X20 R-10').steps);
-    expect(a).toMatchObject({ radius: -10, centre: null });
+  it('resolves R arcs: positive R the minor arc, negative the major (Masso T16)', () => {
+    const arc = (r: number) => moves(run(`G21 G90 F100\nG0 X10\nG2 X0 Y10 R${r}`).steps)[1];
+    const minor = arc(10);
+    const major = arc(-10);
+    expect(minor?.kind === 'arc' && [minor.centre.X, minor.centre.Y]).toEqual([10, 10]);
+    expect(minor?.kind === 'arc' && minor.sweep).toBeCloseTo(-Math.PI / 2, 12);
+    expect(major?.kind === 'arc' && major.centre.X).toBeCloseTo(0, 12);
+    expect(major?.kind === 'arc' && major.centre.Y).toBeCloseTo(0, 12);
+    expect(major?.kind === 'arc' && major.sweep).toBeCloseTo((-3 * Math.PI) / 2, 12);
+    expect(major).toMatchObject({ radius: 10 });
   });
 
   it('runs a centre-format full circle with no axis words (fixes R3)', () => {
