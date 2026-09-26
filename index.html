@@ -18,8 +18,8 @@ SPDX-License-Identifier: MIT
     />
     <!-- An empty inline favicon: without one the browser's automatic request 404s. -->
     <link rel="icon" href="data:," />
-    <script type="module" crossorigin src="./assets/index-oo3lKsMr.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DXCByn8T.css">
+    <script type="module" crossorigin src="./assets/index-DRbH674H.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DWzjmTII.css">
   </head>
   <body>
     <header class="bar">
@@ -48,12 +48,15 @@ SPDX-License-Identifier: MIT
         <button data-view="top">Top</button>
         <button data-view="front">Front</button>
         <button data-view="right">Right</button>
+        <button data-view="plan" title="2D plan (XY). Click again to fit.">2D</button>
       </span>
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </header>
     <main class="panes">
       <section id="editor" class="editor" aria-label="G-code"></section>
-      <section id="view" class="view" aria-label="3D toolpath"></section>
+      <section id="view" class="view" aria-label="Toolpath">
+        <div id="plan" class="plan" aria-label="2D plan" hidden></div>
+      </section>
     </main>
     <section class="info">
       <div id="stats" class="stats"></div>
