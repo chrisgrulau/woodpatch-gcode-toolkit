@@ -64,7 +64,16 @@ function spansOf(t: Token): StyleSpan[] {
 /**
  * The styled spans of one line, from the CORE's tokenizer (ADR-0027): the editor
  * colours exactly what the interpreter will read, so the two can never disagree.
+ *
+ * Public, so it's bounded and guarded itself (reviewer, toolkit #21): only the first
+ * `maxChars` characters are tokenized, and a tokenizer failure returns no spans rather
+ * than throwing. A pathological line (e.g. "X" and 100,000 "-") would otherwise
+ * overflow the core tokenizer's stack; core issue #1506.
  */
-export function lineSpans(text: string): StyleSpan[] {
-  return tokenizeLine(text, 1).tokens.flatMap(spansOf);
+export function lineSpans(text: string, maxChars = 2000): StyleSpan[] {
+  try {
+    return tokenizeLine(text.slice(0, maxChars), 1).tokens.flatMap(spansOf);
+  } catch {
+    return [];
+  }
 }
