@@ -1157,3 +1157,32 @@ Each proceeds on its default and is listed in every PR that touches it.
 | Source of truth for machine/tool/material records | Held by the consuming systems; the toolkit depends only on the schema         |
 | Machine parameter values                          | Placeholders flagged `TODO(calibrate)`; uncalibrated is a representable state |
 | Time-estimate accuracy target                     | ±5% after calibration                                                         |
+
+## ADR-0029: The 2D plan view: Canvas 2D, in the viewer package
+
+**Status:** Accepted, 2026-09-27. Parcel 3d.
+
+**Decision.** `GcodeView2D`, in `@woodpatch/gcode-viewer`, draws a program from above
+(machine X/Y) on a Canvas 2D. It takes the same `LoadedProgram` as the 3D view, with
+the same palette, highlight and pick, so a host can offer both.
+
+- **Canvas 2D, not an orthographic three.js camera.** A plan is 2D: Canvas 2D needs no
+  WebGL context (browsers cap them, and some machines lack them), and it has crisp
+  lines at any width and text for grid labels. It doesn't import three.js, so a bundler
+  drops the 3D view from an app that only uses the plan.
+- **In the viewer package, not a new one.** It shares the loaded program, the palette,
+  the line index and the pick event. A separate package would duplicate them or depend
+  on this one anyway.
+- **The maths is pure and tested apart from the canvas** (`plane.ts`): the transform,
+  fit, zoom about the pointer, pan, the grid spacing and nearest-segment picking.
+  Property tests check that zoom keeps the point under the pointer fixed, and that the
+  grid is always 1, 2 or 5 × 10ⁿ mm and at least 40 px apart.
+- **Drawing:** one path per colour (rapid, arc, feed), so the whole program is three
+  strokes. Rendering happens on demand, after a change. The canvas is sized for the
+  device pixel ratio and follows the container with a `ResizeObserver`.
+- **Picking** is a linear scan for the nearest segment in plan, only on a click. It
+  takes a few milliseconds on the largest fixture. Where segments overlap in plan (a
+  pocket's depth passes), the later one wins.
+- **Not yet:** other planes (XZ, YZ), and a Z colour ramp for depth. Both are small
+  additions to `plane.ts` if the playground or the apps want them. Browser tests of the
+  canvas come with its playground integration, after parcel 3c lands.
