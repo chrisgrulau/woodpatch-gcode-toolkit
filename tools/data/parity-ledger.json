@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "description": "Why the core's path differs from upstream's, per fixture line (tools/parity.mjs, ADR-0025). Rules are tried in order and the first match wins. file and tag are globs; tag is one of: upstream-threw, zero-length, core:<diagnostic codes>, upstream-error, other.",
+  "rules": [
+    {
+      "id": "R1",
+      "ref": "R1",
+      "file": "synthetic/r1-*",
+      "tag": "upstream-threw",
+      "why": "Upstream's expression evaluator recursed until the stack overflowed (RangeError) and drew nothing for the whole file. The core evaluates expressions with LinuxCNC's rules (ADR-0018)."
+    },
+    {
+      "id": "R2 impossible R arc",
+      "ref": "R2",
+      "file": "synthetic/r2-r-arc-impossible.ngc",
+      "tag": "core:SEMANTIC_ARC_R_TOO_SMALL",
+      "why": "The radius can't reach the end point. Upstream computed a NaN centre, drew nothing, said nothing, and carried on from the arc's end. The core refuses the line, and the tool stays where it was (ADR-0022)."
+    },
+    {
+      "id": "R2 R-format full circle",
+      "ref": "R2",
+      "file": "synthetic/r2-r-arc-full-circle.ngc",
+      "tag": "core:SEMANTIC_ARC_R_SAME_POINT",
+      "why": "An R-format arc ending where it starts has no defined centre. Upstream drew a NaN arc silently; the core refuses it, as LinuxCNC's arc_data_r does (ADR-0022)."
+    },
+    {
+      "id": "R3 full circle",
+      "ref": "R3",
+      "file": "synthetic/r3-*",
+      "tag": "other",
+      "why": "`G2 I-5` with no axis words is a valid full circle. Upstream dropped it silently; the core draws it (ADR-0022)."
+    },
+    {
+      "id": "R4 canned cycle expanded",
+      "ref": "R4",
+      "file": "synthetic/r4-*",
+      "tag": "upstream-error",
+      "why": "Upstream reported the cycle, then drew a rapid plunge to depth. The core draws the real cycle: rapid to R, feed to Z, retract (ADR-0020)."
+    },
+    {
+      "id": "R4 canned cycle repeated",
+      "ref": "R4",
+      "file": "synthetic/r4-*",
+      "tag": "other",
+      "why": "A later hole of the same cycle: upstream rapids across at depth, and the core drills it (ADR-0020)."
+    },
+    {
+      "id": "G84-G89 not implemented",
+      "ref": "R4",
+      "file": "synthetic/r4-canned-cycles-all.ngc",
+      "tag": "core:SEMANTIC_NOT_YET_SUPPORTED",
+      "why": "G84–G89 are recognised and refused as not implemented yet: a stated gap, not a guess. LinuxCNC has them; the Masso doesn't. Upstream drew them as rapid plunges (ADR-0020)."
+    },
+    {
+      "id": "R5 G91 with a work offset",
+      "ref": "R5",
+      "file": "synthetic/r5-*",
+      "tag": "other",
+      "why": "Upstream re-added the work offset on every incremental move (101, 202, 303). The core applies it once, giving 1, 2, 3 from machine X0 (ADR-0019)."
+    },
+    {
+      "id": "R6 exponent",
+      "ref": "R6",
+      "file": "synthetic/r6-*",
+      "tag": "core:SEMANTIC_UNSUPPORTED_WORD",
+      "why": "`X1e3` is X1 followed by an E word. Upstream moved to X1, taking E as an axis. E isn't a word here, so the line doesn't run, and the diagnostic explains the exponent reading."
+    },
+    {
+      "id": "R7 rotary words",
+      "ref": "R7",
+      "file": "synthetic/r7-rotary-axes.ngc",
+      "tag": "upstream-error",
+      "why": "Upstream failed the whole line on A/B/C and lost the X move. The core tracks A/B/C and runs the line."
+    },
+    {
+      "id": "R7 unclosed comment",
+      "ref": "R7, N10",
+      "file": "synthetic/r7-unterminated-comment.ngc",
+      "tag": "core:SEMANTIC_NO_FEED_RATE",
+      "why": "Line 2's `(` never closes, so the line isn't run, as LinuxCNC refuses it, and its F100 never takes effect. Line 3 then has no feed, so the core refuses it. Upstream fed it at a silent 200 mm/min (N10)."
+    },
+    {
+      "id": "R8 lines after program end",
+      "ref": "R8, N12",
+      "file": "synthetic/r8-*",
+      "tag": "core:SEMANTIC_AFTER_PROGRAM_END",
+      "why": "M2/M30 end the program. Upstream ignored M codes and drew the moves after them."
+    },
+    {
+      "id": "R8 arc-distance modes",
+      "ref": "R8",
+      "file": "synthetic/r8-arc-distance-modes.ngc",
+      "tag": "upstream-threw",
+      "why": "Upstream threw on G90.1 and drew nothing for the file. The core implements G90.1/G91.1 (ADR-0019)."
+    },
+    {
+      "id": "R8 checksum",
+      "ref": "R8",
+      "file": "synthetic/r8-checksum.ngc",
+      "tag": "core:SEMANTIC_CHECKSUM_IGNORED",
+      "why": "Upstream failed the line on its `*nn` checksum and lost the move. The core ignores the checksum, with a warning, and runs the line."
+    },
+    {
+      "id": "R8 O-word subroutine",
+      "ref": "R8",
+      "file": "synthetic/r8-o-word-sub.ngc",
+      "tag": "other",
+      "why": "Upstream couldn't read O-words and drew nothing. The core runs the subroutine (ADR-0021)."
+    },
+    {
+      "id": "N6 G28 home",
+      "ref": "R8, N6",
+      "file": "synthetic/r8-unsupported-codes.ngc",
+      "tag": "core:SEMANTIC_HOME_UNSET_*",
+      "why": "G28 goes to its stored home, which is unset, so the machine origin. That's where the tool already is, so the move is zero-length. Upstream reported G28 and drew nothing."
+    },
+    {
+      "id": "R8 inverse time (G93)",
+      "ref": "R8",
+      "file": "synthetic/r8-unsupported-codes.ngc",
+      "tag": "other",
+      "why": "Under G93, F2 means the move takes half a minute. Upstream read it as 2 mm/min; the core records an inverse-time feed."
+    },
+    {
+      "id": "N4 bare-CR line endings",
+      "ref": "N4",
+      "file": "synthetic/enc-cr.ngc",
+      "tag": "other",
+      "why": "The file uses CR line endings. Upstream read the whole file as one line, so the last word won. The core reads three lines and draws each move."
+    },
+    {
+      "id": "N3 repeated words",
+      "ref": "N3",
+      "file": "synthetic/enc-long-line.ngc",
+      "tag": "core:SEMANTIC_REPEATED_WORD",
+      "why": "Many X words on one line. Upstream used the last one; RS274 makes a repeated word an error, so the line doesn't run."
+    },
+    {
+      "id": "R9 zero-length moves kept",
+      "ref": "R9",
+      "file": "*",
+      "tag": "zero-length",
+      "why": "A move to where the tool already is. Upstream dropped moves under 10 µm without advancing. The core keeps every move, so paths, line mapping and events stay complete; the estimator ignores their length. Every such line in the upstream samples is this."
+    }
+  ]
+}

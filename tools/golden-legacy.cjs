@@ -327,4 +327,6 @@ function usageError(msg) {
   return 2;
 }
 
-process.exitCode = main();
+// Run as a script; the parity ledger (tools/parity.mjs) imports characterise() instead.
+if (require.main === module) process.exitCode = main();
+module.exports = { characterise, canonicalPath, sha };
