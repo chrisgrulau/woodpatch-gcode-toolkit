@@ -9,3 +9,12 @@ export {
   type InterpreterRules,
   type SubprogramRules,
 } from './rules.js';
+export {
+  LINUXCNC_ARC_TOLERANCE,
+  arcFromCentre,
+  arcFromRadius,
+  findTurn,
+  type ArcGeometry,
+  type ArcResult,
+  type ArcTolerance,
+} from './arcs.js';

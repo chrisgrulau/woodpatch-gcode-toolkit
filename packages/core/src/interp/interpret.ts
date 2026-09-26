@@ -7,6 +7,7 @@ import { LINUXCNC_RULES, type ExpressionRules } from '../expr/rules.js';
 import { parse } from '../syntax/program.js';
 import type { Diagnostic, Line, Program, Severity, Span, Value } from '../syntax/types.js';
 import { G_CODES, M_CODES, codeKey } from './codes.js';
+import { arcFromCentre, arcFromRadius } from './arcs.js';
 import { buildFlowIndex, type FlowIndex, type FlowOp, type SubDefinition } from './flow.js';
 import { LINUXCNC_INTERPRETER_RULES, type InterpreterRules } from './rules.js';
 import { cycleOps, type CycleCode } from './cycles.js';
@@ -1351,7 +1352,7 @@ class Interpreter {
       return;
     }
 
-    // G2/G3: the arc is described here, and resolved and validated by the geometry layer (2d).
+    // G2/G3: resolved and validated as LinuxCNC does (arcs.ts, ADR-0022).
     const [a1, a2] = PLANE_AXES[this.plane];
     const r = words.find((w) => w.letter === 'R');
     const offsetLetters = [a1, a2].map((a) => OFFSET_LETTER[a]);
@@ -1403,20 +1404,35 @@ class Interpreter {
       turns = p.value;
     }
     const u = this.units === 'inch' ? 25.4 : 1;
-    let centre: Position | null = null;
+    const inch = this.units === 'inch';
+    const clockwise = this.motion === 'G2';
+    const tol = this.behaviour.arcTolerance;
+    let result;
     if (!r) {
       for (const w of centreWords) used.add(w.letter);
-      const c: Record<Axis, number> = { ...from };
-      for (const a of [a1, a2]) {
+      // Centre: I/J/K are offsets from the start (G91.1), or work positions (G90.1).
+      const centreOf = (a: Axis) => {
         const w = centreWords.find((x) => x.letter === OFFSET_LETTER[a]);
         const v = (w?.value ?? 0) * u;
-        c[a] = this.arcDistance === 'incremental' ? from[a] + v : v + offset[a];
-      }
-      centre = c;
+        return this.arcDistance === 'incremental' ? from[a] + v : v + offset[a];
+      };
+      result = arcFromCentre(
+        from[a1],
+        from[a2],
+        target[a1],
+        target[a2],
+        centreOf(a1),
+        centreOf(a2),
+        clockwise,
+        turns,
+        tol,
+        inch,
+      );
     } else {
       used.add('R');
-      const inPlane = words.some((w) => w.letter === a1 || w.letter === a2);
-      if (!inPlane) {
+      // LinuxCNC: a radius-format arc needs an in-plane axis word (a full circle can't
+      // be given by R); arc_data_r separately refuses an end point equal to the start.
+      if (!words.some((w) => w.letter === a1 || w.letter === a2)) {
         this.report(
           n,
           'error',
@@ -1425,16 +1441,36 @@ class Interpreter {
         );
         return;
       }
+      result = arcFromRadius(
+        from[a1],
+        from[a2],
+        target[a1],
+        target[a2],
+        r.value * u,
+        clockwise,
+        turns,
+        tol,
+        inch,
+      );
     }
+    if (!result.ok) {
+      // R2: upstream drew nothing and said nothing, then drew the next move from the
+      // previous point. Here the line is refused, and the tool stays where it was.
+      this.report(n, 'error', result.code, result.message);
+      return;
+    }
+    const arc = result.arc;
     this.steps.push({
       kind: 'arc',
       line: n,
       from,
       to: target,
       plane: this.plane,
-      clockwise: this.motion === 'G2',
-      centre,
-      radius: r ? r.value * u : null,
+      clockwise,
+      centre: { ...from, [a1]: arc.ca, [a2]: arc.cb },
+      radius: arc.radius,
+      endRadius: arc.endRadius,
+      sweep: arc.sweep,
       turns,
       feed,
       offset,

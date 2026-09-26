@@ -712,6 +712,89 @@ already handled a leading sign. The lossless property is unaffected.
 
 ---
 
+## ADR-0022: Arcs are resolved and validated as LinuxCNC does; the path model
+
+**Status:** Accepted, 2026-09-26.
+
+**Reference version: LinuxCNC 2.9.x.** `arc_data_ijk`, `arc_data_r`, `find_turn` and the
+tolerance constants are identical on the 2.9 branch and on master; only a parameter type
+in a signature differs.
+
+**Decision: arcs.** Every G2/G3 is resolved to a centre, a start radius, an end
+radius and a signed sweep. The code is `interp/arcs.ts`, transcribed from
+`interp_arc.cc` (`arc_data_ijk`, `arc_data_r`) and `interp_find.cc` (`find_turn`). An
+arc the controller would refuse is reported, and the line doesn't run: the tool stays
+where it was.
+
+- **R format.** The centre is on the chord's perpendicular bisector, and a negative R
+  takes the major arc.
+  - A radius that can't reach the end point is an error (R2: upstream drew nothing and
+    said nothing). There's a 0.00005 in (0.00127 mm) allowance, and a near-semicircle is
+    snapped.
+  - An end point equal to the start is an error.
+  - An arc with no in-plane axis word is an error: a full circle can't be given by R.
+- **Centre format.** An arc with no axis words is a full circle (R3: upstream dropped
+  it). A centre on the start or end point is an error.
+- **Radius mismatch** between start and end, as `arc_data_ijk` judges it:
+  - over 100× the tolerance is always an error;
+  - over 1× the tolerance is an error only if the mismatch also exceeds 0.1% of the
+    radius.
+  - The tolerance is 0.0283 mm, or 0.00283 in for inch programs. Units are the
+    program's, as in LinuxCNC.
+  - An accepted mismatch is a spiral: the radius changes evenly with angle, which is
+    how LinuxCNC's planner moves.
+- **Sweep.** Positive is counter-clockwise from the plane's first axis to its second:
+  XY, ZX, YZ, as in LinuxCNC. Full turns from P are included.
+
+**The step shape changed** (pre-1.0; see the changeset). An arc step now always has
+`centre`, and adds `radius`, `endRadius` and `sweep`. The old `centre: null` and signed
+R radius are gone. Consumers get resolved geometry and never redo the maths.
+
+**The tolerance is dialect data** (`InterpreterRules.arcTolerance`), because
+controllers differ a lot. LinuxCNC refuses a 0.5 mm mismatch on a 10 mm radius, but
+Masso accepted exactly that in the 2026-09-26 machine test. Masso's real limit is
+unknown and is on the machine-test backlog. Parcel 2e sets it.
+
+**Decision: the path model** (`path/`). The plan's typed arrays turned out to be a
+derived view, not a replacement for steps.
+
+- **Why steps stay.** The budget problem was a fast-path bug (the G letter was missing),
+  not per-step allocation. With it fixed, parse + interpret of aztec takes about 0.8 s
+  locally, and the CI ratio is about 0.65× against the 1.45× limit.
+- **`tessellate(steps, { chordTolerance })`** gives the whole path as ONE polyline:
+  - Float64 x/y/z per vertex, plus each vertex's step index and kind (rapid, feed or
+    arc), ready for a GPU buffer.
+  - It's continuous by construction, because a line that can't run doesn't move the
+    tool.
+  - Chords stay within the tolerance of the true arc (default 1 µm, as upstream),
+    including helices and spirals.
+  - A vertex cap (default 20M) guards against `P1000000000`; the result says when it
+    truncated.
+  - Arrays are sized in one counting pass, then filled. That's 11 ms on aztec (226k
+    vertices).
+- **`pathBounds(steps)`** gives the exact box for all moves, and separately for feed
+  moves and for rapids.
+  - It comes from the geometry, not the chords: each arc's end points, plus the first
+    and last point where it faces each cardinal direction. Only those two matter,
+    because the radius changes evenly.
+  - For a spiral the true extreme is a hair off the cardinal angle; the error is under
+    1 µm at any tolerance a controller accepts.
+  - Also 11 ms on aztec.
+- **Positions are machine coordinates.** Showing work coordinates (subtracting each
+  step's `offset`) is the viewer's call, in Phase 3.
+
+**Evidence:**
+
+- **Property tests:** every chord of random arcs is within tolerance, across all planes,
+  both directions, 1–3 turns, helices, and tolerances of 1 µm to 0.1 mm. The exact box
+  contains the tessellation and is within the tolerance of its box.
+- **Mutation checks:** halving the chord count, or dropping the relative mismatch test,
+  turns a test red.
+- **Parity:** the exact bounding box matches upstream's recorded box on all four upstream
+  files, to the golden's 4 decimal places. Upstream was right there, so we agree.
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.

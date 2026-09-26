@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Promotional Notions Pty Ltd trading as Woodpatch House & Garden
 // SPDX-License-Identifier: MIT
 
+import { LINUXCNC_ARC_TOLERANCE, type ArcTolerance } from './arcs.js';
+
 /**
  * Interpreter behaviour that genuinely varies between controllers, as data
  * (ADR-0019), in the same spirit as the expression rules (ADR-0018). Dialect
@@ -32,6 +34,12 @@ export interface InterpreterRules {
   readonly g83Clearance: number;
   /** Subprograms and program flow (parcel 2c-3, ADR-0021). */
   readonly subprograms: SubprogramRules;
+  /**
+   * How far an arc's geometry may be off before the line is refused (ADR-0022).
+   * LinuxCNC: 0.028 mm of radius mismatch. Masso accepted 0.5 mm in the 2026-09-26
+   * machine test; its limit is not known yet.
+   */
+  readonly arcTolerance: ArcTolerance;
 }
 
 export interface SubprogramRules {
@@ -67,4 +75,5 @@ export const LINUXCNC_INTERPRETER_RULES: InterpreterRules = Object.freeze({
   g73Retract: 0.254,
   g83Clearance: 0.254,
   subprograms: Object.freeze({ oWord: true, m98: 'in-file', maxCallDepth: 9 }),
+  arcTolerance: LINUXCNC_ARC_TOLERANCE,
 });
