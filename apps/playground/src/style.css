@@ -84,6 +84,18 @@ button:hover:not(:disabled) {
   min-height: 0;
   position: relative;
 }
+.plan {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+.plan[hidden] {
+  display: none;
+}
+.views button[aria-pressed='true'] {
+  border-color: var(--accent);
+}
 .info {
   max-height: 28vh;
   overflow: auto;

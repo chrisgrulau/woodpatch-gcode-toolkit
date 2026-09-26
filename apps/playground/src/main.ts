@@ -15,6 +15,7 @@ import {
 import { DIALECTS, GENERIC, type Diagnostic } from '@woodpatch/gcode-core';
 import { gcode, showDiagnostics, showPathLine } from '@woodpatch/gcode-editor';
 import {
+  GcodeView2D,
   GcodeViewer,
   ProgramLoader,
   type LoadedProgram,
@@ -44,6 +45,14 @@ for (const d of [GENERIC, ...DIALECTS.filter((x) => x !== GENERIC)]) {
 dialectSel.value = GENERIC.id;
 
 const viewer = new GcodeViewer($('view'));
+// The 2D plan (parcel 3d, ADR-0029) sits over the 3D view and is shown by the "2D"
+// button. Both views get every program and highlight, so switching is instant.
+const planEl = $('plan');
+const plan = new GcodeView2D(planEl);
+const highlight = (n: number | null) => {
+  viewer.highlightLine(n);
+  plan.highlightLine(n);
+};
 const loader = new ProgramLoader(
   () => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }),
 );
@@ -98,7 +107,7 @@ const editor = new EditorView({
         },
         { dark: true },
       ),
-      gcode({ onCursorLine: (n) => viewer.highlightLine(n) }),
+      gcode({ onCursorLine: highlight }),
       // Refuse any edit that would take the document over the cap.
       EditorState.transactionFilter.of((tr) => {
         if (!tr.docChanged || tr.newDoc.length <= MAX_INPUT) return tr;
@@ -113,11 +122,13 @@ const editor = new EditorView({
   }),
 });
 
-viewer.onPick(({ line }) => {
+const onPick = ({ line }: { line: number }) => {
   if (line < 1) return;
-  viewer.highlightLine(line);
+  highlight(line);
   showPathLine(editor, line);
-});
+};
+viewer.onPick(onPick);
+plan.onPick(onPick);
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 function scheduleReload(): void {
@@ -142,6 +153,7 @@ async function reload(): Promise<void> {
   }
   const ms = performance.now() - t0;
   viewer.setProgram(program);
+  plan.setProgram(program);
   const hidden = showDiagnostics(editor, program.diagnostics);
   renderDiagnostics(program.diagnostics);
   renderStats(program, ms, hidden);
@@ -193,7 +205,7 @@ function goToLine(n: number): void {
   const pos = editor.state.doc.line(n).from;
   editor.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
   editor.focus();
-  viewer.highlightLine(n);
+  highlight(n);
 }
 
 /** Replaces the editor's text (a file or a sample) and reads it at once. */
@@ -230,8 +242,19 @@ sampleSel.addEventListener('change', () => {
   if (sampleSel.value) void openSample(sampleSel.value);
 });
 dialectSel.addEventListener('change', () => void reload());
-for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view]'))
-  b.addEventListener('click', () => viewer.setView(b.dataset['view'] as ViewName));
+const viewButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-view]')];
+for (const b of viewButtons)
+  b.addEventListener('click', () => {
+    const name = b.dataset['view'];
+    if (name === 'plan') {
+      if (planEl.hidden) planEl.hidden = false;
+      else plan.fit(); // already showing: a second click re-frames
+    } else {
+      planEl.hidden = true;
+      viewer.setView(name as ViewName);
+    }
+    for (const x of viewButtons) x.setAttribute('aria-pressed', String(x === b));
+  });
 
 // Drop a file anywhere on the page, the editor included. The listener runs in the
 // capture phase and stops the event, so CodeMirror's own drop handler never sees a file

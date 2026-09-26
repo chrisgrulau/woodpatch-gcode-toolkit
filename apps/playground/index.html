@@ -47,12 +47,15 @@ SPDX-License-Identifier: MIT
         <button data-view="top">Top</button>
         <button data-view="front">Front</button>
         <button data-view="right">Right</button>
+        <button data-view="plan" title="2D plan (XY). Click again to fit.">2D</button>
       </span>
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </header>
     <main class="panes">
       <section id="editor" class="editor" aria-label="G-code"></section>
-      <section id="view" class="view" aria-label="3D toolpath"></section>
+      <section id="view" class="view" aria-label="Toolpath">
+        <div id="plan" class="plan" aria-label="2D plan" hidden></div>
+      </section>
     </main>
     <section class="info">
       <div id="stats" class="stats"></div>

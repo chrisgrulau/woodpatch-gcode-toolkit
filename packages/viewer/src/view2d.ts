@@ -53,6 +53,8 @@ export class GcodeView2D {
   private h = 1;
   private frame = 0;
   private drag: { x: number; y: number; moved: boolean } | null = null;
+  /** Whether the current program has been fitted to a real (visible) size yet. */
+  private fitted = false;
   private disposed = false;
 
   constructor(
@@ -93,6 +95,8 @@ export class GcodeView2D {
   fit(): void {
     if (this.disposed) return;
     this.t = fitTransform(this.program, this.w, this.h);
+    // A fit while hidden (no size) doesn't count: fit again once there's a size.
+    this.fitted = this.program !== null && this.hasSize();
     this.requestRender();
   }
 
@@ -112,15 +116,20 @@ export class GcodeView2D {
   /** Call if the container's size changed without the ResizeObserver seeing it. */
   resize(): void {
     if (this.disposed) return;
-    const first = this.w === 1 && this.h === 1;
     this.w = Math.max(1, this.container.clientWidth);
     this.h = Math.max(1, this.container.clientHeight);
     const dpr = globalThis.devicePixelRatio ?? 1;
     this.canvas.width = Math.round(this.w * dpr);
     this.canvas.height = Math.round(this.h * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (first && this.program) this.t = fitTransform(this.program, this.w, this.h);
-    this.requestRender();
+    // A program set while the view was hidden is fitted when it first gets a size.
+    // After that, hiding and showing the view keeps the user's pan and zoom.
+    if (!this.fitted && this.program && this.hasSize()) this.fit();
+    else this.requestRender();
+  }
+
+  private hasSize(): boolean {
+    return this.container.clientWidth > 0 && this.container.clientHeight > 0;
   }
 
   dispose(): void {

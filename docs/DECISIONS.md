@@ -1262,6 +1262,12 @@ the same palette, highlight and pick, so a host can offer both.
 - **Picking** is a linear scan for the nearest segment in plan, only on a click. It
   takes a few milliseconds on the largest fixture. Where segments overlap in plan (a
   pocket's depth passes), the later one wins.
+- **Hidden and shown:** a host may keep the view hidden (the playground puts it over the
+  3D view and toggles it). A program set while it's hidden is fitted when it first gets
+  a size; after that, hiding and showing keeps the user's pan and zoom. In the
+  playground, the "2D" button shows it, and a second click re-frames the path.
 - **Not yet:** other planes (XZ, YZ), and a Z colour ramp for depth. Both are small
-  additions to `plane.ts` if the playground or the apps want them. Browser tests of the
-  canvas come with its playground integration, after parcel 3c lands.
+  additions to `plane.ts` if the playground or the apps want them.
+- **Browser tests** (the playground's Playwright suite): the plan draws, a click picks a
+  line that the editor then marks, the zoom survives a switch to 3D and back, and a
+  second "2D" click re-frames.
