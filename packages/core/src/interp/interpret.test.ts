@@ -443,3 +443,30 @@ describe('canned cycles (LinuxCNC interp_cycles.cc; fixes R4)', () => {
     expect(moves(r.steps)).toEqual([]);
   });
 });
+
+describe('fast path', () => {
+  // Bracketing every axis and feed number ([1.5] for 1.5) means the same thing but
+  // forces the general path, so the two paths must give identical results.
+  const bracketed = (src: string) => src.replace(/([XYZABCF])(-?[0-9.]+)/gi, '$1[$2]');
+  const dir = fileURLToPath(new URL('../../../../fixtures/upstream/', import.meta.url));
+
+  it.each(['tux.ngc', 'webgcode.ngc', 'test_pycam.ngc', 'aztec_calendar.ngc'])(
+    'gives the same steps and diagnostics as the general path: %s',
+    (f) => {
+      const src = readFileSync(join(dir, f), 'utf8').split('\n').slice(0, 30000).join('\n');
+      const fast = run(src);
+      const general = run(bracketed(src));
+      expect(general.steps.length).toBe(fast.steps.length);
+      expect(general.steps).toEqual(fast.steps);
+      expect(general.diagnostics).toEqual(fast.diagnostics);
+      expect(general.state).toEqual(fast.state);
+    },
+  );
+
+  it('ends a run of canned cycles, as the general path does', () => {
+    // After G1 on the fast path, the next G81 must start a new initial level.
+    const src = 'G0 Z10\nG98 G81 X1 Z-1 R2 F100\nG1 Z5\nG81 X2 Z-1 R2';
+    expect(ends(src).at(-1)).toEqual([2, 0, 5]);
+    expect(ends(bracketed(src)).at(-1)).toEqual([2, 0, 5]);
+  });
+});

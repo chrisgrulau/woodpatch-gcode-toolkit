@@ -98,6 +98,7 @@ const FAST_LETTERS: Readonly<Record<string, number>> = {
   C: 32,
   F: 64,
   N: 128,
+  G: 256,
 };
 /** The fast path has nothing to report as unused, so its "used" set is a no-op. */
 const NO_USED = { add: (): void => {} };
@@ -292,6 +293,8 @@ class Interpreter {
     const motion = g ?? this.motion;
     if (motion !== 'G0' && motion !== 'G1') return false;
     this.motion = motion;
+    // An ordinary motion ends a run of canned cycles (as the general path does).
+    this.cycleInitial = null;
     if (f !== undefined) {
       this.feedRate = this.feedMode === 'inverse-time' ? f : f * (this.units === 'inch' ? 25.4 : 1);
     }
