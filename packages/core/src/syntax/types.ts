@@ -39,6 +39,11 @@ export interface Diagnostic {
   /** 1-based line number. */
   readonly line: number;
   readonly span?: Span;
+  /**
+   * The subprogram file the line is in, as the program resolver named it; absent for
+   * the main program (parcel 2c-3).
+   */
+  readonly file?: string;
 }
 
 /** A plain decimal number, e.g. `-1.5`, `2.`, `.25`. */

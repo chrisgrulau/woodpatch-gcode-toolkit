@@ -32,7 +32,15 @@ export type Feed =
  * `position - offset`. That lets G53, G10, G92 and coordinate-system changes compose
  * exactly, while a viewer can still draw in work coordinates.
  */
-export type Step =
+export type Step = StepKind & {
+  /**
+   * The subprogram file the step came from, as the program resolver named it; absent
+   * for the main program. `line` is a line of that file.
+   */
+  readonly file?: string;
+};
+
+type StepKind =
   | {
       readonly kind: 'linear';
       readonly line: number;
@@ -73,7 +81,7 @@ export type Step =
       readonly flood: boolean;
     }
   | { readonly kind: 'pause'; readonly line: number; readonly optional: boolean }
-  | { readonly kind: 'end'; readonly line: number; readonly by: 'M2' | 'M30' | '%' };
+  | { readonly kind: 'end'; readonly line: number; readonly by: 'M2' | 'M30' | 'M99' | '%' };
 
 export interface InterpretOptions {
   /** Expression rules (ADR-0018). Default: LINUXCNC_RULES. */
@@ -84,7 +92,43 @@ export interface InterpretOptions {
   readonly blockDelete?: boolean;
   /** Machine position before the first line. Default: all zeros. */
   readonly start?: Partial<Position>;
+  /**
+   * Supplies a subprogram that lives in its own file (parcel 2c-3, ADR-0021): LinuxCNC
+   * `o<name> call` (name lower-cased, e.g. "myfile" for myfile.ngc) or Masso
+   * `M98 P<n>` (name "10" for 10.nc). Return the file's text, or undefined if there is
+   * no such file. The core never reads files itself, so it runs the same in a browser
+   * and on a server; the caller decides where subprograms come from. Must be
+   * synchronous: fetch asynchronously beforehand if needed.
+   */
+  readonly resolveProgram?: (request: ProgramRequest) => string | undefined;
+  /** Safety caps for untrusted input. Hitting one stops the run with an error. */
+  readonly limits?: Partial<InterpretLimits>;
 }
+
+export interface ProgramRequest {
+  readonly kind: 'o-word' | 'm98';
+  readonly name: string;
+}
+
+/**
+ * Resource limits, independent of any controller (ADR-0021). A controller's own limit
+ * (e.g. call depth) says "this won't run on the machine"; these say "too large to
+ * process", so a hostile or broken file cannot hang a server.
+ */
+export interface InterpretLimits {
+  /** Loop iterations (while, do, repeat, M98 L) across the whole run. Default 1,000,000. */
+  readonly maxLoopIterations: number;
+  /** Blocks executed, counting each loop pass and canned-cycle repeat. Default 20,000,000. */
+  readonly maxBlocks: number;
+  /** Call nesting, whatever the dialect allows. Default 64. */
+  readonly maxCallDepth: number;
+}
+
+export const DEFAULT_LIMITS: InterpretLimits = Object.freeze({
+  maxLoopIterations: 1_000_000,
+  maxBlocks: 20_000_000,
+  maxCallDepth: 64,
+});
 
 /** The modal state after the last line: useful for tests, editors and resuming. */
 export interface ModalState {

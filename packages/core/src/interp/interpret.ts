@@ -4,19 +4,24 @@
 import { evaluate, type ParameterReader } from '../expr/evaluate.js';
 import { parseExpression } from '../expr/parse.js';
 import { LINUXCNC_RULES, type ExpressionRules } from '../expr/rules.js';
+import { parse } from '../syntax/program.js';
 import type { Diagnostic, Line, Program, Severity, Span, Value } from '../syntax/types.js';
 import { G_CODES, M_CODES, codeKey } from './codes.js';
+import { buildFlowIndex, type FlowIndex, type FlowOp, type SubDefinition } from './flow.js';
 import { LINUXCNC_INTERPRETER_RULES, type InterpreterRules } from './rules.js';
 import { cycleOps, type CycleCode } from './cycles.js';
 import {
   AXES,
+  DEFAULT_LIMITS,
   type Axis,
   type Feed,
+  type InterpretLimits,
   type InterpretOptions,
   type InterpretResult,
   type ModalState,
   type Plane,
   type Position,
+  type ProgramRequest,
   type Step,
 } from './types.js';
 
@@ -112,6 +117,35 @@ interface Word {
   readonly span: Span;
 }
 
+/** A program the interpreter can run lines of: the main one, or a subprogram file. */
+interface Loaded {
+  /** The resolver's name for a subprogram file; null for the main program. */
+  readonly name: string | null;
+  readonly lines: readonly Line[];
+  /** Built on first use: a program with no O-words never pays for it. */
+  flow: FlowIndex | null;
+}
+
+/** One level of the call stack (parcel 2c-3, ADR-0021). */
+interface Frame {
+  readonly program: Loaded;
+  /** Index of the next line to run. */
+  pc: number;
+  readonly kind: 'main' | 'o-sub' | 'm98';
+  readonly label: string;
+  /** The caller's #1-#30, restored on return (o-word calls only; M98 shares them). */
+  readonly saved: readonly number[] | null;
+  /** Local named parameters: those not starting with "_" (LinuxCNC scoping). */
+  readonly named: Map<string, number>;
+  /** Passes left of each active repeat loop, by the repeat line's index. */
+  repeats: Map<number, number> | null;
+  /** M98 L: further runs of this subprogram after the current one. */
+  m98Left: number;
+}
+
+/** LinuxCNC: `o<name> call` passes up to 30 arguments as #1-#30. */
+const SUB_PARAMS = 30;
+
 class Interpreter {
   private readonly rules: ExpressionRules;
   private readonly behaviour: InterpreterRules;
@@ -119,7 +153,8 @@ class Interpreter {
   private readonly steps: Step[] = [];
   private readonly diagnostics: Diagnostic[] = [];
   private readonly numbered = new Map<number, number>();
-  private readonly named = new Map<string, number>();
+  /** Global named parameters: names starting with "_" (LinuxCNC). */
+  private readonly globalNamed = new Map<string, number>();
   private readonly params: ParameterReader;
   private readonly once = new Set<string>();
   /** Canned cycles: sticky R, Q, P and Z (program units converted to mm; P in seconds). */
@@ -153,32 +188,64 @@ class Interpreter {
   private tool: number | null = null;
   private selectedTool: number | null = null;
   private ended = false;
+  /** A hard stop: broken O-word structure or a safety limit. */
+  private stopped = false;
   private percentSeen = false;
+
+  // Subprograms and flow (parcel 2c-3).
+  private readonly resolve: ((request: ProgramRequest) => string | undefined) | undefined;
+  private readonly limits: InterpretLimits;
+  private readonly frames: Frame[] = [];
+  private frame!: Frame;
+  /** Every subroutine defined so far, from any file (LinuxCNC: global labels). */
+  private readonly subs = new Map<string, { program: Loaded; def: SubDefinition }>();
+  /** Subprogram files by request, null when the resolver had none. */
+  private readonly files = new Map<string, Loaded | null>();
+  private iterations = 0;
+  private blocks = 0;
+  /** An M98 or M99 on the current line, run after the rest of it. */
+  private pendingCall: { readonly p: Word | undefined; readonly l: Word | undefined } | null = null;
+  private pendingReturn = false;
 
   constructor(options: InterpretOptions) {
     this.rules = options.rules ?? LINUXCNC_RULES;
     this.behaviour = options.interpreterRules ?? LINUXCNC_INTERPRETER_RULES;
     this.blockDelete = options.blockDelete ?? true;
     this.position = { ...ZERO, ...options.start };
+    this.resolve = options.resolveProgram;
+    this.limits = { ...DEFAULT_LIMITS, ...options.limits };
     this.numbered.set(5220, 1);
     this.params = {
       numbered: (i) => this.numbered.get(i) ?? 0,
-      named: (n) => this.named.get(n),
+      named: (n) => (n.startsWith('_') ? this.globalNamed : this.frame.named).get(n),
     };
   }
 
   run(program: Program): InterpretResult {
+    const main: Frame = {
+      program: { name: null, lines: program.lines, flow: null },
+      pc: 0,
+      kind: 'main',
+      label: '',
+      saved: null,
+      named: new Map(),
+      repeats: null,
+      m98Left: 0,
+    };
+    this.frames.push(main);
+    this.frame = main;
+    this.loop();
+
     let skippedAfterEnd = 0;
     let firstSkipped = 0;
-    for (const line of program.lines) {
-      if (this.ended) {
+    if (this.ended) {
+      for (let i = main.pc; i < program.lines.length; i++) {
+        const line = program.lines[i] as Line;
         if (line.tokens.some((t) => t.kind !== 'comment' && t.kind !== 'percent')) {
           skippedAfterEnd++;
           firstSkipped ||= line.lineNo;
         }
-        continue;
       }
-      this.line(line);
     }
     if (skippedAfterEnd > 0) {
       this.diagnostics.push({
@@ -191,9 +258,70 @@ class Interpreter {
     return { steps: this.steps, diagnostics: this.diagnostics, state: this.state() };
   }
 
+  /**
+   * Runs lines until the program ends, stops, or runs out. Each pass of the outer loop
+   * runs one frame's lines; a call or return switches frame and starts a new pass.
+   */
+  private loop(): void {
+    const maxBlocks = this.limits.maxBlocks;
+    for (;;) {
+      const f = this.frame;
+      const lines = f.program.lines;
+      const file = f.program.name;
+      while (f.pc < lines.length) {
+        const line = lines[f.pc] as Line;
+        f.pc++;
+        if (++this.blocks > maxBlocks) {
+          this.stop(line.lineNo, 'SEMANTIC_LIMIT_BLOCKS', `more than ${maxBlocks} blocks run`);
+          return;
+        }
+        if (file === null) this.line(line, f.pc - 1);
+        else {
+          const s0 = this.steps.length;
+          const d0 = this.diagnostics.length;
+          this.line(line, f.pc - 1);
+          this.attribute(s0, d0, file);
+        }
+        if (this.ended || this.stopped) return;
+        if (this.frame !== f) break;
+      }
+      if (this.frame === f) {
+        // Ran off the end of the frame's file.
+        if (this.frames.length === 1) return;
+        const last = lines[lines.length - 1];
+        this.report(
+          last?.lineNo ?? 0,
+          'warning',
+          'SEMANTIC_SUB_NO_RETURN',
+          f.kind === 'm98'
+            ? 'Subprogram file ends without M99; returning'
+            : `Subroutine o${f.label} ends without endsub; returning`,
+        );
+        if (file !== null) this.attribute(this.steps.length, this.diagnostics.length - 1, file);
+        this.leave();
+      }
+    }
+  }
+
+  /**
+   * Tags the steps and diagnostics since (s0, d0) with the subprogram file they came
+   * from. Entries already tagged keep their file: loading another file from this one
+   * reports that file's own findings under its name.
+   */
+  private attribute(s0: number, d0: number, file: string): void {
+    for (let i = s0; i < this.steps.length; i++) {
+      const step = this.steps[i] as Step;
+      if (step.file === undefined) this.steps[i] = { ...step, file };
+    }
+    for (let i = d0; i < this.diagnostics.length; i++) {
+      const d = this.diagnostics[i] as Diagnostic;
+      if (d.file === undefined) this.diagnostics[i] = { ...d, file };
+    }
+  }
+
   // ── One line ────────────────────────────────────────────────────────────
 
-  private line(line: Line): void {
+  private line(line: Line, index: number): void {
     if (this.fastLine(line)) return;
     const n = line.lineNo;
     const tokens = line.tokens;
@@ -215,12 +343,7 @@ class Interpreter {
       return;
     }
     if (tokens.some((t) => t.kind === 'oword')) {
-      this.report(
-        n,
-        'error',
-        'SEMANTIC_NOT_YET_SUPPORTED',
-        'O-word control flow is not interpreted yet (parcel 2c-3); line not run',
-      );
+      this.flowLine(line, index);
       return;
     }
     for (const t of tokens) {
@@ -257,6 +380,16 @@ class Interpreter {
 
     this.execute(n, words);
     for (const a of assignments) this.assign(line, a.target, a.value);
+    // M98/M99 act after the rest of the line (their parameters are already set).
+    if (this.pendingCall) {
+      const { p, l } = this.pendingCall;
+      this.pendingCall = null;
+      this.m98(n, p, l);
+    }
+    if (this.pendingReturn) {
+      this.pendingReturn = false;
+      this.m99(n);
+    }
   }
 
   /**
@@ -342,6 +475,21 @@ class Interpreter {
             'error',
             'SEMANTIC_UNSUPPORTED_CODE',
             `${w.letter}${key} is not supported; line not run`,
+            w.span,
+          );
+          ok = false;
+          continue;
+        }
+        if (
+          w.letter === 'M' &&
+          (key === '98' || key === '99') &&
+          this.behaviour.subprograms.m98 === 'in-file'
+        ) {
+          this.report(
+            n,
+            'error',
+            'SEMANTIC_NOT_YET_SUPPORTED',
+            `M${key}: numbered subprograms within the file (Fanuc style) are not interpreted yet; line not run`,
             w.span,
           );
           ok = false;
@@ -622,6 +770,14 @@ class Interpreter {
       }
     }
 
+    // Subprogram call and return (M98/M99): queued to run after the line (see line()).
+    if (m.has('98')) {
+      used.add('P');
+      used.add('L');
+      this.pendingCall = { p: get('P'), l: get('L') };
+    }
+    if (m.has('99')) this.pendingReturn = true;
+
     // Stop (M0, M1, M2, M30, M60).
     if (m.has('0') || m.has('60')) this.steps.push({ kind: 'pause', line: n, optional: false });
     if (m.has('1')) this.steps.push({ kind: 'pause', line: n, optional: true });
@@ -639,6 +795,432 @@ class Interpreter {
         );
       }
     }
+  }
+
+  // ── Program flow and subprograms (parcel 2c-3, ADR-0021) ───────────────
+
+  /** An O-word line: follows the structure matched by {@link buildFlowIndex}. */
+  private flowLine(line: Line, index: number): void {
+    const n = line.lineNo;
+    if (!this.behaviour.subprograms.oWord) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_UNSUPPORTED_OWORD',
+        'O-words (subroutines, loops, conditions) are not supported by this dialect; line not run',
+      );
+      return;
+    }
+    const f = this.frame;
+    const op = this.flowOf(f.program).ops[index];
+    if (!op) return;
+    if (op.broken) {
+      this.stop(n, 'SEMANTIC_FLOW_STOPPED', 'the O-word structure is broken at this line');
+      return;
+    }
+    if (op.extraWords) {
+      this.report(
+        n,
+        'warning',
+        'SEMANTIC_OWORD_EXTRA_WORDS',
+        'Other words on an O-word line are ignored (their meaning is undefined in LinuxCNC)',
+      );
+    }
+    const lines = f.program.lines;
+    switch (op.kind) {
+      case 'program':
+      case 'do':
+      case 'endif':
+        return;
+      case 'sub':
+        // Reached in sequence, this is a definition: its body runs only when called.
+        f.pc = op.target + 1;
+        return;
+      case 'call':
+        this.call(line, op);
+        return;
+      case 'endsub':
+      case 'return':
+        this.subReturn(line, op);
+        return;
+      case 'if': {
+        // Test the if, then each elseif in turn; run the first true branch, or the else.
+        let at = index;
+        let cur: FlowOp = op;
+        for (;;) {
+          if (cur.kind === 'else') break;
+          const c = this.condition(lines[at] as Line, cur);
+          if (c === null) return;
+          if (c) break;
+          at = cur.target;
+          const next = this.flowOf(f.program).ops[at];
+          if (!next || next.kind === 'endif') break;
+          cur = next;
+        }
+        f.pc = at + 1;
+        return;
+      }
+      case 'elseif':
+      case 'else':
+        // Reached in sequence: the branch before it ran, so the chain is done.
+        f.pc = op.end + 1;
+        return;
+      case 'while': {
+        const c = this.condition(line, op);
+        if (c === null) return;
+        if (!c) f.pc = op.end + 1;
+        return;
+      }
+      case 'endwhile':
+        if (this.iterate(n)) f.pc = op.target;
+        return;
+      case 'do-while': {
+        const c = this.condition(line, op);
+        if (c === null) return;
+        if (c && this.iterate(n)) f.pc = op.target + 1;
+        return;
+      }
+      case 'repeat': {
+        // Only reached on entry: endrepeat jumps back past it. The count is read once
+        // and rounded (LinuxCNC round_to_int); zero or less skips the body.
+        const arg = op.args[0];
+        if (!arg) {
+          this.stop(n, 'SEMANTIC_OWORD_NO_ARGUMENT', `o${op.label} repeat needs a count, e.g. [5]`);
+          return;
+        }
+        const v = this.value(line, arg);
+        if (v === null) {
+          this.stop(n, 'SEMANTIC_FLOW_STOPPED', 'the repeat count could not be evaluated');
+          return;
+        }
+        const count = Math.round(v);
+        if (count <= 0) f.pc = op.end + 1;
+        else (f.repeats ??= new Map()).set(index, count - 1);
+        return;
+      }
+      case 'endrepeat': {
+        const left = f.repeats?.get(op.target) ?? 0;
+        if (left > 0 && this.iterate(n)) {
+          f.repeats?.set(op.target, left - 1);
+          f.pc = op.target + 1;
+        } else f.repeats?.delete(op.target);
+        return;
+      }
+      case 'break':
+        f.pc = op.end + 1;
+        return;
+      case 'continue': {
+        // A while re-tests at its top; a do tests at its closing while.
+        // (The do's closing while counts its own iteration; a while's top does not.)
+        const loop = this.flowOf(f.program).ops[op.target];
+        if (loop?.kind === 'do') f.pc = op.end;
+        else if (this.iterate(n)) f.pc = op.target;
+        return;
+      }
+    }
+  }
+
+  /** The flow index of a program, built on first use; registers its subroutines. */
+  private flowOf(program: Loaded): FlowIndex {
+    if (program.flow) return program.flow;
+    const flow = buildFlowIndex(program.lines);
+    program.flow = flow;
+    for (const d of flow.diagnostics)
+      this.diagnostics.push(program.name === null ? d : { ...d, file: program.name });
+    for (const [label, def] of flow.subs) {
+      if (!this.subs.has(label)) this.subs.set(label, { program, def });
+    }
+    return flow;
+  }
+
+  /**
+   * A condition's truth (LinuxCNC: any non-zero value is true), or null after stopping
+   * the run: when a condition can't be evaluated, which branch runs is unknowable.
+   */
+  private condition(line: Line, op: FlowOp): boolean | null {
+    const arg = op.args[0];
+    if (!arg) {
+      this.stop(
+        line.lineNo,
+        'SEMANTIC_OWORD_NO_ARGUMENT',
+        `o${op.label} ${op.kind === 'do-while' ? 'while' : op.kind} needs a condition, e.g. [#1 LT 3]`,
+      );
+      return null;
+    }
+    const v = this.value(line, arg);
+    if (v === null) {
+      this.stop(line.lineNo, 'SEMANTIC_FLOW_STOPPED', 'the condition could not be evaluated');
+      return null;
+    }
+    return v !== 0;
+  }
+
+  /** Counts one loop iteration against the safety limit. False (and stopped) when over it. */
+  private iterate(n: number): boolean {
+    if (++this.iterations <= this.limits.maxLoopIterations) return true;
+    this.stop(
+      n,
+      'SEMANTIC_LIMIT_ITERATIONS',
+      `more than ${this.limits.maxLoopIterations} loop iterations`,
+    );
+    return false;
+  }
+
+  /** Whether one more call level is allowed; reports why not. */
+  private canNest(n: number, what: string): boolean {
+    const depth = this.frames.length; // the new frame's depth below the main program
+    const dialect = this.behaviour.subprograms.maxCallDepth;
+    if (depth > this.limits.maxCallDepth) {
+      this.stop(
+        n,
+        'SEMANTIC_LIMIT_CALL_DEPTH',
+        `calls nested more than ${this.limits.maxCallDepth} deep`,
+      );
+      return false;
+    }
+    if (depth > dialect) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_CALL_TOO_DEEP',
+        `${what} would nest calls ${depth} deep; this controller allows ${dialect}, so the program fails here on the machine. Call not run`,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /** `o<label> call [a] [b] …` (LinuxCNC `execute_call`, CT_NGC_OWORD_SUB). */
+  private call(line: Line, op: FlowOp): void {
+    const n = line.lineNo;
+    const sub = this.findSub(op.label, n);
+    if (!sub) return;
+    if (!this.canNest(n, `o${op.label} call`)) return;
+    if (op.args.length > SUB_PARAMS) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_CALL_ARGUMENTS',
+        `A call takes at most ${SUB_PARAMS} arguments; call not run`,
+      );
+      return;
+    }
+    // Arguments are evaluated in the caller, before anything changes.
+    const args: number[] = [];
+    for (const a of op.args) {
+      const v = this.value(line, a);
+      if (v === null) {
+        this.report(
+          n,
+          'error',
+          'SEMANTIC_LINE_NOT_RUN',
+          'Call not run: an argument could not be evaluated',
+        );
+        return;
+      }
+      args.push(v);
+    }
+    // #1-#30 are local: save the caller's, pass the arguments; the rest keep the
+    // caller's values. The previous return value is cleared.
+    const saved: number[] = [];
+    for (let i = 1; i <= SUB_PARAMS; i++) saved.push(this.numbered.get(i) ?? 0);
+    args.forEach((v, k) => this.numbered.set(k + 1, v));
+    this.globalNamed.set('_value', 0);
+    this.globalNamed.set('_value_returned', 0);
+    this.enter({
+      program: sub.program,
+      pc: sub.def.start + 1,
+      kind: 'o-sub',
+      label: op.label,
+      saved,
+      named: new Map(),
+      repeats: null,
+      m98Left: 0,
+    });
+  }
+
+  /** `o<label> endsub [v]` or `o<label> return [v]`: back to the caller, with an optional value. */
+  private subReturn(line: Line, op: FlowOp): void {
+    const n = line.lineNo;
+    if (this.frame.kind !== 'o-sub') {
+      this.stop(n, 'SEMANTIC_FLOW_STOPPED', `o${op.label} ${op.kind} outside a subroutine call`);
+      return;
+    }
+    const arg = op.args[0];
+    if (arg) {
+      const v = this.value(line, arg);
+      if (v !== null) {
+        this.globalNamed.set('_value', v);
+        this.globalNamed.set('_value_returned', 1);
+      }
+    }
+    this.leave();
+  }
+
+  /** Masso-style `M98 P<n> [L<runs>]`: runs the separate file n, L times (default once). */
+  private m98(n: number, p: Word | undefined, l: Word | undefined): void {
+    if (!p) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_M98_NO_P',
+        'M98 needs a P word (the subprogram number); call not run',
+      );
+      return;
+    }
+    // LinuxCNC's integer check (read_o): within 0.0001 of a whole number.
+    const num = Math.round(p.value);
+    if (Math.abs(p.value - num) > 0.0001 || num < 1) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_M98_BAD_P',
+        'M98 P must be a positive whole number; call not run',
+        p.span,
+      );
+      return;
+    }
+    const runs = l ? Math.round(l.value) : 1;
+    if (l && (Math.abs(l.value - runs) > 0.0001 || runs < 0)) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_M98_BAD_L',
+        'M98 L (runs) must be a whole number, 0 or more; call not run',
+        l.span,
+      );
+      return;
+    }
+    if (runs === 0) return; // M98 L0: the subprogram is not run
+    const name = String(num);
+    const program = this.load('m98', name, n);
+    if (!program) return;
+    if (!this.canNest(n, `M98 P${name}`)) return;
+    // Loop passes after the first count against the iteration limit up front.
+    if (runs - 1 > this.limits.maxLoopIterations - this.iterations) {
+      this.stop(
+        n,
+        'SEMANTIC_LIMIT_ITERATIONS',
+        `more than ${this.limits.maxLoopIterations} loop iterations`,
+      );
+      return;
+    }
+    this.iterations += runs - 1;
+    this.enter({
+      program,
+      pc: 0,
+      kind: 'm98',
+      label: name,
+      saved: null,
+      // Parameters are global across M98 calls (LinuxCNC; Masso has none).
+      named: this.frame.named,
+      repeats: null,
+      m98Left: runs - 1,
+    });
+  }
+
+  /** M99: the end of an M98 subprogram. */
+  private m99(n: number): void {
+    const f = this.frame;
+    if (f.kind === 'm98') {
+      this.leave();
+      return;
+    }
+    if (f.kind === 'o-sub') {
+      this.stop(n, 'SEMANTIC_FLOW_STOPPED', `M99 cannot end subroutine o${f.label} (use endsub)`);
+      return;
+    }
+    // In the main program, LinuxCNC restarts the program from the top, forever.
+    this.report(
+      n,
+      'warning',
+      'SEMANTIC_M99_IN_MAIN',
+      'M99 in the main program: the controller may restart the program endlessly; drawn once',
+    );
+    this.end(n, 'M99');
+  }
+
+  private enter(frame: Frame): void {
+    this.frames.push(frame);
+    this.frame = frame;
+  }
+
+  /** Returns from the current frame, or starts its next M98 L run. */
+  private leave(): void {
+    const f = this.frame;
+    if (f.kind === 'm98' && f.m98Left > 0) {
+      f.m98Left--;
+      f.pc = 0;
+      return;
+    }
+    this.frames.pop();
+    this.frame = this.frames[this.frames.length - 1] as Frame;
+    if (f.saved) f.saved.forEach((v, k) => this.numbered.set(k + 1, v));
+  }
+
+  /** A subroutine by label: defined in a program already seen, or in a file of its own. */
+  private findSub(label: string, n: number): { program: Loaded; def: SubDefinition } | null {
+    const known = this.subs.get(label);
+    if (known) return known;
+    const program = this.load('o-word', label, n);
+    if (!program) return null;
+    this.flowOf(program);
+    const found = this.subs.get(label);
+    if (!found) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_SUB_NOT_FOUND',
+        `The file for o<${label}> does not define o<${label}> sub; call not run`,
+      );
+      return null;
+    }
+    return found;
+  }
+
+  /** A subprogram file from the resolver, parsed once; null (reported) if there is none. */
+  private load(kind: ProgramRequest['kind'], name: string, n: number): Loaded | null {
+    const key = `${kind}:${name}`;
+    const cached = this.files.get(key);
+    if (cached !== undefined) {
+      if (cached === null) this.notFound(kind, name, n);
+      return cached;
+    }
+    let text: string | undefined;
+    try {
+      text = this.resolve?.({ kind, name });
+    } catch (e) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_RESOLVER_FAILED',
+        `Loading subprogram ${name} failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    if (text === undefined) {
+      this.files.set(key, null);
+      this.notFound(kind, name, n);
+      return null;
+    }
+    const parsed = parse(text);
+    for (const d of parsed.diagnostics) this.diagnostics.push({ ...d, file: name });
+    const loaded: Loaded = { name, lines: parsed.lines, flow: null };
+    this.files.set(key, loaded);
+    return loaded;
+  }
+
+  private notFound(kind: ProgramRequest['kind'], name: string, n: number): void {
+    const what = kind === 'm98' ? `Subprogram ${name} (M98 P${name})` : `Subroutine o<${name}>`;
+    const why = this.resolve
+      ? 'is not defined in this program and no file was found for it'
+      : 'is not defined in this program (separate files need a program resolver)';
+    this.report(n, 'error', 'SEMANTIC_SUB_NOT_FOUND', `${what} ${why}; call not run`);
+  }
+
+  /** Stops the whole run: continuing would draw a path the machine would not take. */
+  private stop(n: number, code: string, why: string): void {
+    this.report(n, 'error', code, `Stopped: ${why}`);
+    this.stopped = true;
   }
 
   // ── Motion ──────────────────────────────────────────────────────────────
@@ -856,6 +1438,13 @@ class Interpreter {
         `${this.behaviour.cycleRepeat.letter} (repeats) must be a positive integer`,
       );
     }
+
+    // Each repeat counts as a block against the safety limit, before anything is built.
+    if (repeats > this.limits.maxBlocks - this.blocks) {
+      this.stop(n, 'SEMANTIC_LIMIT_BLOCKS', `more than ${this.limits.maxBlocks} blocks run`);
+      return;
+    }
+    this.blocks += repeats - 1;
 
     const pos = this.position;
     const offset = this.offset();
@@ -1162,7 +1751,8 @@ class Interpreter {
     const t = target.replace(/[ \t]/g, '');
     const nameMatch = /^#<(.*)>$/.exec(t);
     if (nameMatch) {
-      this.named.set((nameMatch[1] ?? '').toLowerCase(), value);
+      const name = (nameMatch[1] ?? '').toLowerCase();
+      (name.startsWith('_') ? this.globalNamed : this.frame.named).set(name, value);
       return;
     }
     // #n, #[expr] or ##n: evaluate the index expression (without the leading #).
@@ -1185,7 +1775,7 @@ class Interpreter {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  private end(n: number, by: 'M2' | 'M30' | '%'): void {
+  private end(n: number, by: 'M2' | 'M30' | 'M99' | '%'): void {
     this.steps.push({ kind: 'end', line: n, by });
     this.ended = true;
   }

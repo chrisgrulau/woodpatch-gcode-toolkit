@@ -543,6 +543,95 @@ initial Z under G98, as modelled.
 
 ---
 
+## ADR-0021: Subprograms and program flow
+
+**Status:** Accepted, 2026-09-26.
+
+**Decision.** LinuxCNC's O-word flow and Masso's M98/M99 subprogram files are both
+interpreted. They follow LinuxCNC's `interp_o_word.cc` and `interp_read.cc` where the
+source and the docs (`o-code.adoc`) differ. Which one a controller has is dialect data.
+
+**O-words (LinuxCNC).** `sub`/`endsub`/`return`/`call`, `if`/`elseif`/`else`/`endif`,
+`while`/`endwhile`, `do`/`while`, `repeat`/`endrepeat`, `break`/`continue`.
+
+- **Structure is matched once, up front** (`buildFlowIndex`), not by seeking through the
+  file at run time as LinuxCNC does. The index is built the first time the interpreter
+  meets an O-word, so a program without O-words pays nothing.
+- **Scope:** subroutine labels are global across all loaded files. Control-flow labels
+  are local to the subroutine body, or the main program, they're in. Labels are
+  normalised: `o0100` is `o100`, and `<My Sub>` is `<mysub>`.
+- **Calls:** up to 30 arguments go into #1–#30. Unpassed ones keep the caller's values,
+  and the caller's #1–#30 are restored on return. Parameters above #30 are global.
+- **Named parameters** are local to a call unless their name starts with `_`. That was
+  already true of the main program.
+- **Return values:** `endsub [v]` or `return [v]` sets `#<_value>` and
+  `#<_value_returned>`. Both are cleared at the next call.
+- **Truth:** a condition is true when non-zero. A `repeat` count is rounded, and 0 or
+  less skips the body.
+- **Forward calls:** a sub may be called before its definition in the main program. The
+  docs forbid it; the source allows it (`control_back_to` step 3).
+- **Definitions are skipped** in normal flow and run only when called.
+- **Structure errors stop the run,** as LinuxCNC aborts: carrying on would run code that
+  should be skipped, or skip code that should run. They are nested definitions,
+  unmatched or reused labels, `else` after `else`, unclosed blocks, and `break`/`continue`
+  outside a while or do loop. So do a missing or unevaluable condition, and an M99 ending
+  an O-word sub.
+- **Not yet interpreted:** `o[expr]` label indirection, which the tokenizer doesn't
+  read, and Python O-word subs.
+
+**Subprogram files.** The core never reads files. The caller passes
+`resolveProgram({ kind, name })`, which returns the file's text or `undefined`.
+
+- The call is synchronous: an async caller fetches first.
+- Each file is asked for once and parsed once.
+- LinuxCNC `o<name> call` asks for `o-word:<name>` and runs that file's `o<name> sub`.
+- Masso `M98 P<n>` asks for `m98:<n>`: the number with no leading zeros, which is the
+  Masso rule for file names.
+- A missing file, or a resolver that throws, is reported, and the call is skipped.
+- Steps and diagnostics from a file carry `file` (the resolver's name) and that file's
+  own line numbers. `file` is absent for the main program, so existing consumers see no
+  change.
+
+**M98/M99 (Masso).** `M98 P<n> [L<runs>]` runs file n, L times (default once; `L0`
+doesn't run it). #1–#30 are shared with the caller, not saved. The call runs after the
+rest of its line. M99 returns. A file that ends without M99 returns with a warning.
+
+- In the main program, M99 ends the drawing with a warning. LinuxCNC restarts the program
+  forever.
+- Under LinuxCNC rules, `M98 P<n>` means a numbered `O<n>` block in the same file (Fanuc
+  style). That's reported as not interpreted yet, and the line is not run.
+
+**Two kinds of limit, reported differently:**
+
+| Limit                      | Whose            | Value                                        | Message                                |
+| -------------------------- | ---------------- | -------------------------------------------- | -------------------------------------- |
+| `subprograms.maxCallDepth` | the controller's | LinuxCNC 9, Masso 5                          | won't run on the machine; call skipped |
+| `limits.maxCallDepth`      | ours (resource)  | 64                                           | stopped: too large to process          |
+| `limits.maxLoopIterations` | ours             | 1,000,000 (while, do, repeat, M98 L)         | stopped                                |
+| `limits.maxBlocks`         | ours             | 20,000,000 (each canned-cycle repeat counts) | stopped                                |
+
+- **LinuxCNC's 9:** `INTERP_SUB_ROUTINE_LEVELS` is 10, but it counts the main program.
+  `enter_context` refuses when `call_level + 1 >= 10`. A test runs 9 levels and refuses
+  a 10th.
+- **Masso's 5** is from its manual ("up to 5 levels of sub-program nesting"). It isn't
+  tested on the machine yet, so it goes on the next machine test sheet.
+- The resource limits are `InterpretOptions.limits`, so a server can tighten them.
+- Canned-cycle repeats (`L`/`K`) now count against `maxBlocks` before any motion is
+  built, so `G81 … L1000000000` can't exhaust memory.
+
+**Found on the way: a sign before a parameter, bracket or function.** `X-#1`, `X-[…]`,
+`X+SIN[…]` and `X--#1` are values in LinuxCNC (`read_real_value` negates what follows).
+The 2a tokenizer rejected them, and subroutine code uses them constantly. The tokenizer
+now reads them as an expression whose span includes the sign; the expression parser
+already handled a leading sign. The lossless property is unaffected.
+
+**The R8 O-word fixtures** now differ from upstream deliberately.
+`r8-o-word-sub.ngc` draws its move to X10 with no diagnostics; upstream gave three
+"did not understand line" errors and drew nothing. `r8-program-number.ngc` reads its
+`O1000` without complaint. Tests pin both against the legacy goldens.
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.

@@ -42,7 +42,8 @@ export const M_CODES: ReadonlyMap<string, CodeInfo> = new Map([
   ...G(8, [7, 8, 9]),
   ...G(9, [48, 49]),
   ...G(5, [62, 63, 64, 65, 66, 67, 68]),
-  ...G(0, [98, 99], 'subprograms (parcel 2c-3)'),
+  // Subprogram call and return: per dialect (InterpreterRules.subprograms.m98).
+  ...G(0, [98, 99]),
 ]);
 
 /** `1` → "1", `59.1` → "59.1", `1.0000001` → "1": codes are compared at one decimal. */
