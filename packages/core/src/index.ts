@@ -12,3 +12,4 @@ export * from './syntax/index.js';
 export * from './expr/index.js';
 export * from './interp/index.js';
 export * from './path/index.js';
+export * from './dialect/index.js';

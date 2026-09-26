@@ -79,7 +79,22 @@ const SPINDLE_CODES = [
   ['4', 'ccw'],
   ['5', 'off'],
 ] as const;
-const IO_CODES = ['62', '63', '64', '65', '66', '67', '68'] as const;
+/** Machine I/O with no effect on the path (Masso adds clamps, door and plasma THC). */
+const IO_CODES = [
+  '62',
+  '63',
+  '64',
+  '65',
+  '66',
+  '67',
+  '68',
+  '10',
+  '11',
+  '85',
+  '86',
+  '666',
+  '667',
+] as const;
 const WCS_CODES = [
   ['54', 1],
   ['55', 2],
@@ -226,8 +241,9 @@ class Interpreter {
   private pendingReturn = false;
 
   constructor(options: InterpretOptions) {
-    this.rules = options.rules ?? LINUXCNC_RULES;
-    this.behaviour = options.interpreterRules ?? LINUXCNC_INTERPRETER_RULES;
+    this.rules = options.rules ?? options.dialect?.expressions ?? LINUXCNC_RULES;
+    this.behaviour =
+      options.interpreterRules ?? options.dialect?.interpreter ?? LINUXCNC_INTERPRETER_RULES;
     this.blockDelete = options.blockDelete ?? true;
     this.position = { ...ZERO, ...options.start };
     this.resolve = options.resolveProgram;
@@ -372,8 +388,46 @@ class Interpreter {
       this.frame.percentSeen = true;
       return;
     }
-    if (tokens[0]?.kind === 'block-delete' && this.blockDelete) {
-      this.report(n, 'info', 'SEMANTIC_BLOCK_DELETED', 'Skipped: block delete ("/") is on');
+    if (tokens[0]?.kind === 'block-delete') {
+      if (this.behaviour.blockDelete === 'ignored') {
+        this.reportOnce(
+          n,
+          'info',
+          'SEMANTIC_BLOCK_DELETE_IGNORED',
+          'This controller ignores "/" (block delete): such lines run',
+        );
+      } else if (this.blockDelete) {
+        this.report(n, 'info', 'SEMANTIC_BLOCK_DELETED', 'Skipped: block delete ("/") is on');
+        return;
+      }
+    }
+    const message = tokens.find((t) => t.kind === 'message');
+    if (message) {
+      if (this.behaviour.messages.lines)
+        this.steps.push({ kind: 'message', line: n, text: message.text, target: message.target });
+      else
+        this.report(
+          n,
+          'warning',
+          'SEMANTIC_MSG_NOT_SUPPORTED',
+          'MSG lines are Masso syntax; this controller would not read it as a message. Ignored',
+          message.span,
+        );
+      return;
+    }
+    if (this.behaviour.messages.comments) this.commentMessages(line);
+    if (
+      !this.behaviour.parameters &&
+      tokens.some(
+        (t) => t.kind === 'assignment' || (t.kind === 'word' && t.value?.kind === 'expression'),
+      )
+    ) {
+      this.report(
+        n,
+        'error',
+        'SEMANTIC_PARAMETERS_UNSUPPORTED',
+        'This controller has no expressions or parameters (#, [ ]); line not run',
+      );
       return;
     }
     if (tokens.some((t) => t.kind === 'oword')) {
@@ -441,7 +495,11 @@ class Interpreter {
     let g: 'G0' | 'G1' | undefined;
     let axes = 0;
     for (const t of tokens) {
-      if (t.kind === 'comment') continue;
+      if (t.kind === 'comment') {
+        // A (MSG, …) comment is a message on some controllers: take the general path.
+        if (this.behaviour.messages.comments && /^\s*msg\s*,/i.test(t.text)) return false;
+        continue;
+      }
       if (t.kind !== 'word' || t.value?.kind !== 'number') return false;
       const b = FAST_LETTERS[t.letter];
       if (b === undefined || (seen & b) !== 0) return false;
@@ -509,6 +567,30 @@ class Interpreter {
             'error',
             'SEMANTIC_UNSUPPORTED_CODE',
             `${w.letter}${key} is not supported; line not run`,
+            w.span,
+          );
+          ok = false;
+          continue;
+        }
+        const allowed = this.behaviour.codes;
+        if (allowed && !(w.letter === 'G' ? allowed.g : allowed.m).includes(key)) {
+          this.report(
+            n,
+            'error',
+            'SEMANTIC_UNSUPPORTED_CODE',
+            `${w.letter}${key} is not supported by this controller; line not run`,
+            w.span,
+          );
+          ok = false;
+          continue;
+        }
+        const pending = allowed?.later?.[`${w.letter}${key}`];
+        if (pending) {
+          this.report(
+            n,
+            'error',
+            'SEMANTIC_NOT_YET_SUPPORTED',
+            `${w.letter}${key} is not interpreted yet for this controller: ${pending}; line not run`,
             w.span,
           );
           ok = false;
@@ -778,6 +860,8 @@ class Interpreter {
     // Motion (G0–G3, G80), possibly modified by G53.
     const priorMotion = this.motion;
     for (const c of explicitMotion) this.motion = `G${c}` as ModalState['motion'];
+    // Masso: "after G80 … the controller automatically returns to G00 rapid motion".
+    if (this.motion === 'G80' && this.behaviour.afterG80 === 'rapid') this.motion = 'G0';
     // The cycle's initial level (LinuxCNC cycle_il) ends when any other motion runs.
     if (!CYCLES.has(this.motion)) this.cycleInitial = null;
     if (!motionSuspended && CYCLES.has(this.motion)) {
@@ -1525,6 +1609,14 @@ class Interpreter {
   ): void {
     const code = this.motion as CycleCode;
     const same = prior === code;
+    if (CYCLES.has(prior) && !same && this.behaviour.cycleSwitch === 'warn') {
+      this.report(
+        n,
+        'warning',
+        'SEMANTIC_CYCLE_SWITCH_WITHOUT_G80',
+        `${prior} is still active: this controller's docs require G80 before starting ${code}`,
+      );
+    }
     const fail = (c: string, m: string) => this.report(n, 'error', c, `${m}; line not run`);
     const get = (l: string) => words.find((w) => w.letter === l);
     if (this.plane !== 'XY')
@@ -1717,6 +1809,16 @@ class Interpreter {
         return null;
       }
       return { mode: 'inverse-time', perMinute: this.feedRate };
+    }
+    if (this.feedRate === null && this.behaviour.missingFeed === 'machine-rate') {
+      // Masso runs it at the operator's percentage of the maximum rate (machine test T1).
+      this.reportOnce(
+        n,
+        'warning',
+        'SEMANTIC_FEED_UNSPECIFIED',
+        'Feed move before any F: the controller runs it at a rate set on the machine, so its time is unknown',
+      );
+      return { mode: 'unspecified' };
     }
     if (this.feedRate === null || this.feedRate <= 0) {
       // Upstream silently used 200 mm/min (N10). A real controller refuses.
@@ -1956,6 +2058,21 @@ class Interpreter {
   private add(d: Diagnostic): void {
     if (this.diagnostics.length < this.limits.maxDiagnostics) this.diagnostics.push(d);
     else this.suppressed++;
+  }
+
+  /** LinuxCNC `(MSG, text)` comments: an operator message. */
+  private commentMessages(line: Line): void {
+    for (const t of line.tokens) {
+      if (t.kind !== 'comment' || t.style !== 'paren') continue;
+      const m = /^\s*msg\s*,(.*)$/is.exec(t.text);
+      if (m)
+        this.steps.push({
+          kind: 'message',
+          line: line.lineNo,
+          text: (m[1] ?? '').trim(),
+          target: 'screen',
+        });
+    }
   }
 
   private reportOnce(line: number, severity: Severity, code: string, message: string): void {

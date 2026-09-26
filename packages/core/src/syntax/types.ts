@@ -113,6 +113,20 @@ export interface ArgumentToken {
   readonly value: ExpressionValue;
 }
 
+/**
+ * A Masso message line (parcel 2e-1): `MSG text`, `MSG_S`, `MSG_W` or `MSG_SW`, at
+ * the start of a line or after its N word. The rest of the line is the message, so
+ * it isn't read as G-code words. A bare `MSG` clears the message.
+ */
+export interface MessageToken {
+  readonly kind: 'message';
+  readonly span: Span;
+  /** MSG and MSG_S: the controller's screen. MSG_W: the myWorkshop app. MSG_SW: both. */
+  readonly target: 'screen' | 'workshop' | 'both';
+  /** The message text, without the keyword and the space after it; '' clears. */
+  readonly text: string;
+}
+
 /** `/` at the start of a line: block delete (optional skip). */
 export interface BlockDeleteToken {
   readonly kind: 'block-delete';
@@ -139,6 +153,7 @@ export type Token =
   | OWordToken
   | ArgumentToken
   | BlockDeleteToken
+  | MessageToken
   | PercentToken
   | ChecksumToken;
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LINUXCNC_ARC_TOLERANCE, type ArcTolerance } from './arcs.js';
+import { LINUXCNC_G, LINUXCNC_M } from './codes.js';
 
 /**
  * Interpreter behaviour that genuinely varies between controllers, as data
@@ -40,6 +41,41 @@ export interface InterpreterRules {
    * machine test; its limit is not known yet.
    */
   readonly arcTolerance: ArcTolerance;
+  /**
+   * The G and M codes the controller accepts (parcel 2e-1, ADR-0023). A code outside
+   * the list is "not supported; line not run", which is what Masso does (its docs,
+   * and machine test T8). `later` marks codes the controller has but this
+   * interpreter doesn't model yet, with the reason. null: every code known here.
+   */
+  readonly codes: {
+    readonly g: readonly string[];
+    readonly m: readonly string[];
+    readonly later?: Readonly<Record<string, string>>;
+  } | null;
+  /** Whether expressions and parameters exist (#1, [1+2], SIN[30]). Masso: no (T10-T14). */
+  readonly parameters: boolean;
+  /**
+   * `/` at the start of a line. `switch`: the block-delete switch decides (LinuxCNC).
+   * `ignored`: the `/` means nothing and the line runs (Masso, machine test T7).
+   */
+  readonly blockDelete: 'switch' | 'ignored';
+  /** Operator messages: Masso `MSG text` lines; LinuxCNC `(MSG, text)` comments. */
+  readonly messages: { readonly lines: boolean; readonly comments: boolean };
+  /**
+   * A feed move before any F. `error` (LinuxCNC). `machine-rate`: it runs at the
+   * operator's percentage of the maximum rate, so its time is unknown (Masso, T1).
+   */
+  readonly missingFeed: 'error' | 'machine-rate';
+  /**
+   * After G80. `error`: axis words with no motion mode are an error (LinuxCNC).
+   * `rapid`: G80 returns to G0 (Masso docs; machine test T9 moved at rapid).
+   */
+  readonly afterG80: 'error' | 'rapid';
+  /**
+   * Changing from one canned cycle to another without G80. Masso's docs say G80 must
+   * come first; what the machine does otherwise is untested, so it's a warning.
+   */
+  readonly cycleSwitch: 'allowed' | 'warn';
 }
 
 export interface SubprogramRules {
@@ -76,4 +112,11 @@ export const LINUXCNC_INTERPRETER_RULES: InterpreterRules = Object.freeze({
   g83Clearance: 0.254,
   subprograms: Object.freeze({ oWord: true, m98: 'in-file', maxCallDepth: 9 }),
   arcTolerance: LINUXCNC_ARC_TOLERANCE,
+  codes: Object.freeze({ g: LINUXCNC_G, m: LINUXCNC_M }),
+  parameters: true,
+  blockDelete: 'switch',
+  messages: Object.freeze({ lines: false, comments: true }),
+  missingFeed: 'error',
+  afterG80: 'error',
+  cycleSwitch: 'allowed',
 });
