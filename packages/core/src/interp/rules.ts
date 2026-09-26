@@ -76,6 +76,33 @@ export interface InterpreterRules {
    * come first; what the machine does otherwise is untested, so it's a warning.
    */
   readonly cycleSwitch: 'allowed' | 'warn';
+  /**
+   * G10 forms (parcel 2e-2, ADR-0024). `linuxcnc`: L2 sets an offset; L20 sets the
+   * offset that makes the current position read the given value. `masso`: L2 sets an
+   * offset; L2.1 sets it to the ACTIVE offset plus the value; L20 and L20.1 do the
+   * same for the extended offsets G54.1 P1-P100 (Masso docs, "G10").
+   */
+  readonly g10: 'linuxcnc' | 'masso';
+  /**
+   * G28/G30. `linuxcnc`: to the stored positions #5161/#5181, all axes together.
+   * `masso`: G28 to machine home and G30 to the parking position, Z first, then the
+   * other axes together (Masso docs, v5.13).
+   */
+  readonly homing: 'linuxcnc' | 'masso';
+  /**
+   * M66. `io`: machine I/O, with no effect on the path. `masso-wait`: waits for an
+   * auxiliary input (P); Q is a timeout in milliseconds; if the input condition is
+   * met, the next S lines are skipped (Masso docs, "M66").
+   */
+  readonly m66: 'io' | 'masso-wait';
+  /** Masso's tool-change warnings: T must come before M06, and M05 before M06 (docs). */
+  readonly toolChangeChecks: boolean;
+  /**
+   * A speed change while the spindle runs isn't waited for (operator, 2026-09-26): the
+   * controller carries on while the VFD ramps. If a feed move follows before any
+   * dwell, suggest one (info).
+   */
+  readonly spindleSettleAdvice: boolean;
 }
 
 export interface SubprogramRules {
@@ -119,4 +146,9 @@ export const LINUXCNC_INTERPRETER_RULES: InterpreterRules = Object.freeze({
   missingFeed: 'error',
   afterG80: 'error',
   cycleSwitch: 'allowed',
+  g10: 'linuxcnc',
+  homing: 'linuxcnc',
+  m66: 'io',
+  toolChangeChecks: false,
+  spindleSettleAdvice: false,
 });

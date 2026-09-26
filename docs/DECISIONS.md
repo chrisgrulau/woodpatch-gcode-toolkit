@@ -898,6 +898,48 @@ a stated gap rather than a guess.
 
 ---
 
+## ADR-0024: The Masso profile's positions, waits and advice
+
+**Status:** Accepted, 2026-09-26. Parcel 2e-2 completes the Masso profile (ADR-0023).
+
+**Decision.** Five more `InterpreterRules`, each set for Masso from its docs (v5.13),
+and one tolerance option.
+
+| Rule                  | LinuxCNC 2.9                                | Masso G3 v5.13                                                                        |
+| --------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `g10`                 | L2 sets; L20 = current position reads value | L2 sets; **L2.1 = active offset + value**; **L20/L20.1 = the same for G54.1 P1–P100** |
+| `homing`              | G28/G30 to #5161/#5181, all axes together   | **G28 to machine home, G30 to the parking position; Z first, then the rest**          |
+| `m66`                 | machine I/O, ignored                        | **a `wait` step**: P input, Q timeout (ms), S = lines skipped if met                  |
+| `toolChangeChecks`    | off                                         | **warn** if T follows M06 on the line, or the spindle is running at M06               |
+| `spindleSettleAdvice` | off                                         | **info**: a speed change while running, then a feed move with no dwell between        |
+| `arcTolerance.beyond` | `error`                                     | **`warn`**: past the tested 0.5 mm the arc is drawn, with a warning                   |
+
+**G54.1 P1–P100** (Masso's extended offsets, modal group 12) are coordinate systems
+101–200, stored with the others. `ModalState.coordinateSystem` reports them that way.
+
+**Machine positions are the caller's data.** `InterpretOptions.machine.home` and
+`.park` hold machine coordinates.
+
+- **Home defaults to the machine origin.** This router's home is all zeros (its setup
+  screen, 2026-09-26).
+- **An unknown parking position** is reported, and the G30 move isn't drawn. Guessing a
+  position would draw a path the machine won't take. These values belong to the Phase 5
+  machine profile, which will pass them in.
+
+**G28 with axis words.** It rapids to the named point first: work coordinates under
+G90, incremental under G91 (the docs' `G91 G28 Z8`). Then only the named axes go home,
+Z first. Moves that don't change anything aren't drawn.
+
+**M66's S is not a spindle speed on Masso.** It's the number of lines to skip. The
+preview draws those lines, as if the input condition wasn't met, and warns.
+
+**Two readings of ambiguous docs** are on the machine-test backlog:
+
+- G10 L2.1 reads as "active offset + value".
+- The G28 intermediate move is one combined rapid.
+
+---
+
 ## Pending decisions
 
 Each proceeds on its default and is listed in every PR that touches it.

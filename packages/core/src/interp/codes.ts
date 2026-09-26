@@ -57,7 +57,7 @@ export const LINUXCNC_M: readonly string[] = Object.freeze(LINUXCNC_M_TABLE.map(
 export const G_CODES: ReadonlyMap<string, CodeInfo> = new Map([
   ...LINUXCNC_G_TABLE,
   // Masso: extended work offsets (G54.1 P1-P100).
-  ...G(12, [54.1], 'extended work offsets (parcel 2e-2)'),
+  ...G(12, [54.1]),
   // Masso: toolpath rotation, probing, lathe, laser and plasma.
   ...G(16, [68, 69], 'toolpath rotation is not simulated'),
   ...G(0, [38.2, 38.6, 38.7], 'probing depends on where the probe touches; not simulated'),
@@ -69,7 +69,7 @@ export const G_CODES: ReadonlyMap<string, CodeInfo> = new Map([
 export const M_CODES: ReadonlyMap<string, CodeInfo> = new Map([
   ...LINUXCNC_M_TABLE,
   // Masso: tool unload, clamp, door and plasma torch-height control.
-  ...G(6, [6.1], 'tool unload (parcel 2e-2)'),
+  ...G(6, [6.1]),
   ...G(5, [10, 11, 85, 86, 666, 667]),
 ]);
 
