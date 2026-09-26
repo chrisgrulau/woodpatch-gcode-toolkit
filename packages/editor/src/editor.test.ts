@@ -276,3 +276,13 @@ describe('review findings on #21, pinned', () => {
     expect(count).toBe(0);
   });
 });
+
+describe('lineSpans is guarded itself (it is public)', () => {
+  it('never throws on a pathological line, and tokenizes at most maxChars', () => {
+    expect(() => lineSpans('X' + '-'.repeat(100_000))).not.toThrow();
+    expect(lineSpans('X' + '-'.repeat(100_000))).toBeInstanceOf(Array);
+    expect(lineSpans('G0 X1 Y2', 5).map((s) => s.cls)).toEqual(['gc-g', 'gc-axis']);
+    // With no cap, the core overflows its stack on this line (#1506): the guard catches it.
+    expect(lineSpans('X' + '-'.repeat(100_000), Infinity)).toEqual([]);
+  });
+});

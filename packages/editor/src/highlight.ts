@@ -33,13 +33,7 @@ export const MAX_STYLED_CHARS = 2000;
 export function styledSpans(text: string, n: number) {
   const bom = n === 1 && text.charCodeAt(0) === 0xfeff ? 1 : 0;
   const body = text.slice(bom, bom + MAX_STYLED_CHARS);
-  let spans;
-  try {
-    spans = lineSpans(body);
-  } catch {
-    return [];
-  }
-  return spans
+  return lineSpans(body, MAX_STYLED_CHARS)
     .map((s) => ({ from: s.from + bom, to: s.to + bom, cls: s.cls }))
     .sort((a, b) => a.from - b.from || b.to - a.to);
 }
